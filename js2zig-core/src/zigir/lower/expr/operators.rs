@@ -643,6 +643,19 @@ impl Lowerer {
     ) -> crate::zigir::types::IrExpr {
         use crate::zigir::types::IrExpr;
 
+        // R42-EMIT-DA-1: Destructuring assignment (`{a, b} = obj` or
+        // `[a, b] = arr`) must be expanded into multiple assignments.
+        // Without this, the emit layer only assigns the last binding.
+        if ae.operator == AssignmentOperator::Assign
+            && matches!(
+                &ae.left,
+                oxc_ast::ast::AssignmentTarget::ObjectAssignmentTarget(_)
+                    | oxc_ast::ast::AssignmentTarget::ArrayAssignmentTarget(_)
+            )
+        {
+            return self.lower_destructure_assignment(ae);
+        }
+
         // ── Special-case compound assignments that need expansion ──
         // **= → a = a ** b
         if ae.operator == AssignmentOperator::Exponential {
@@ -1015,6 +1028,239 @@ impl Lowerer {
         }
 
         IrExpr::Assign { op, target, value }
+    }
+
+    /// R42-EMIT-DA-1: Lower destructuring assignment (`{a, b} = expr` or
+    /// `[a, b] = expr`) into a BlockExpr containing a temp variable binding
+    /// and individual assignment statements for each binding.
+    ///
+    /// This is distinct from `lower_destructure_decl` (which creates new
+    /// variable declarations). Here the variables already exist — we only
+    /// need to assign each one from the corresponding field/index of the RHS.
+    fn lower_destructure_assignment(
+        &mut self,
+        ae: &AssignmentExpression,
+    ) -> crate::zigir::types::IrExpr {
+        use crate::zigir::types::{
+            IrAssignTarget, IrDestructureAccess, IrDestructureBindingDecl, IrDestructureDecl,
+            IrDestructureKind, IrExpr, IrStmt, IrVarDecl,
+        };
+
+        // Lower the RHS into a temp variable (always use temp for safety).
+        let temp_name = self.name_mangler.next_name("_js_dst");
+        let blk_label = self.name_mangler.next_name("_dst_blk");
+        let temp_ident = IrExpr::Ident(IrIdent::new(&temp_name));
+
+        let init_ir = self.lower_expr(&ae.right);
+
+        // Determine the source type to choose access pattern.
+        let init_type = self.infer_expr_type(&ae.right);
+        let struct_field_names: Option<Vec<String>> = match &init_type {
+            Some(ZigType::Struct(fields)) if !fields.is_empty() => {
+                Some(fields.iter().map(|(n, _)| n.clone()).collect())
+            }
+            _ => None,
+        };
+        let is_struct = struct_field_names.is_some();
+        let is_arraylist = matches!(init_type, Some(ZigType::ArrayList(_)));
+
+        // Build the bindings vector and assign statements.
+        let mut bindings: Vec<IrDestructureBindingDecl> = Vec::new();
+        let mut assign_stmts: Vec<IrStmt> = Vec::new();
+
+        // Common helper: push a temp var decl as the first statement.
+        let temp_decl = IrStmt::VarDecl(IrVarDecl {
+            name: IrIdent::new(&temp_name),
+            is_const: true,
+            zig_type: None,
+            init: Some(init_ir),
+            is_json_parse: false,
+            needs_var_suppression: false,
+            needs_deinit: false,
+        });
+        assign_stmts.push(temp_decl);
+
+        match &ae.left {
+            oxc_ast::ast::AssignmentTarget::ObjectAssignmentTarget(ot) => {
+                for prop in &ot.properties {
+                    let (key_name, bind_name, _has_default, default_expr) = match prop {
+                        oxc_ast::ast::AssignmentTargetProperty::AssignmentTargetPropertyIdentifier(ap) => {
+                            let key = ap.binding.name.to_string();
+                            let bind = ap.binding.name.to_string();
+                            let default = ap.init.as_ref().map(|e| self.lower_expr(e));
+                            (key, bind, default.is_some(), default)
+                        }
+                        oxc_ast::ast::AssignmentTargetProperty::AssignmentTargetPropertyProperty(ap) => {
+                            let key = match &ap.name {
+                                oxc_ast::ast::PropertyKey::StaticIdentifier(id) => id.name.to_string(),
+                                oxc_ast::ast::PropertyKey::StringLiteral(sl) => sl.value.to_string(),
+                                oxc_ast::ast::PropertyKey::PrivateIdentifier(id) => id.name.to_string(),
+                                _ => continue,
+                            };
+                            let (pattern, default) = self.lower_maybe_default(&ap.binding);
+                            (key, pattern.zig_name.clone(), default.is_some(), default)
+                        }
+                    };
+
+                    let is_struct_field = struct_field_names
+                        .as_ref()
+                        .is_some_and(|names| names.contains(&key_name));
+
+                    let default_ir = default_expr;
+
+                    bindings.push(IrDestructureBindingDecl {
+                        name: self.make_ident(&bind_name),
+                        is_const: false,
+                        access: IrDestructureAccess::ObjectField {
+                            source: temp_name.clone(),
+                            key: key_name.clone(),
+                            is_struct_field,
+                        },
+                        default: default_ir.clone(),
+                    });
+
+                    // Build the read expression for this binding.
+                    let read_expr = if is_struct && is_struct_field {
+                        IrExpr::FieldAccess {
+                            object: Box::new(temp_ident.clone()),
+                            field: key_name,
+                            field_kind: FieldKind::StructField,
+                        }
+                    } else if is_struct && !is_struct_field {
+                        // Field not in struct — use default or compile error
+                        if let Some(def) = &default_ir {
+                            def.clone()
+                        } else {
+                            IrExpr::Undefined
+                        }
+                    } else {
+                        // HashMap / unknown: use .get("key")
+                        if let Some(def) = &default_ir {
+                            IrExpr::Conditional {
+                                cond: Box::new(IrExpr::Binary {
+                                    op: BinOp::Ne,
+                                    left: Box::new(IrExpr::ComputedField {
+                                        object: Box::new(temp_ident.clone()),
+                                        key: Box::new(IrExpr::StringLiteral(key_name.clone())),
+                                        key_kind: crate::zigir::kinds::ComputedKeyKind::MapGet,
+                                    }),
+                                    right: Box::new(IrExpr::Null),
+                                    left_type: Some(ZigType::JsAny),
+                                    right_type: Some(ZigType::JsAny),
+                                }),
+                                then: Box::new(IrExpr::ComputedField {
+                                    object: Box::new(temp_ident.clone()),
+                                    key: Box::new(IrExpr::StringLiteral(key_name.clone())),
+                                    key_kind: crate::zigir::kinds::ComputedKeyKind::MapGet,
+                                }),
+                                else_: Box::new(def.clone()),
+                            }
+                        } else {
+                            IrExpr::ComputedField {
+                                object: Box::new(temp_ident.clone()),
+                                key: Box::new(IrExpr::StringLiteral(key_name)),
+                                key_kind: crate::zigir::kinds::ComputedKeyKind::MapGet,
+                            }
+                        }
+                    };
+
+                    assign_stmts.push(IrStmt::Assign {
+                        target: IrAssignTarget::Ident(self.make_ident(&bind_name)),
+                        op: AssignOp::Assign,
+                        value: read_expr,
+                    });
+                }
+            }
+            oxc_ast::ast::AssignmentTarget::ArrayAssignmentTarget(at) => {
+                for (i, elem) in at.elements.iter().enumerate() {
+                    let Some(target) = elem else { continue };
+                    let (pattern, default) = self.lower_maybe_default(target);
+                    let bind_name = pattern.zig_name.clone();
+
+                    let default_ir = default;
+
+                    bindings.push(IrDestructureBindingDecl {
+                        name: self.make_ident(&bind_name),
+                        is_const: false,
+                        access: IrDestructureAccess::ArrayIndex {
+                            source: temp_name.clone(),
+                            index: i,
+                        },
+                        default: default_ir.clone(),
+                    });
+
+                    // Build the read expression for this index.
+                    let read_expr = if is_arraylist {
+                        IrExpr::IndexAccess {
+                            object: Box::new(temp_ident.clone()),
+                            index: Box::new(IrExpr::IntLiteral(i as i64)),
+                            index_kind: IndexKind::ArrayListItem,
+                        }
+                    } else {
+                        IrExpr::IndexAccess {
+                            object: Box::new(temp_ident.clone()),
+                            index: Box::new(IrExpr::IntLiteral(i as i64)),
+                            index_kind: IndexKind::SliceIndex,
+                        }
+                    };
+
+                    // Wrap in bounds-check if default exists.
+                    let final_value = if let Some(def) = &default_ir {
+                        IrExpr::Conditional {
+                            cond: Box::new(IrExpr::Binary {
+                                op: BinOp::Gt,
+                                left: Box::new(IrExpr::FieldAccess {
+                                    object: Box::new(temp_ident.clone()),
+                                    field: "len".to_string(),
+                                    field_kind: FieldKind::SliceLen,
+                                }),
+                                right: Box::new(IrExpr::IntLiteral(i as i64)),
+                                left_type: Some(ZigType::I64),
+                                right_type: Some(ZigType::I64),
+                            }),
+                            then: Box::new(read_expr),
+                            else_: Box::new(def.clone()),
+                        }
+                    } else {
+                        read_expr
+                    };
+
+                    assign_stmts.push(IrStmt::Assign {
+                        target: IrAssignTarget::Ident(self.make_ident(&bind_name)),
+                        op: AssignOp::Assign,
+                        value: final_value,
+                    });
+                }
+            }
+            _ => {
+                // Shouldn't happen — guarded by caller.
+                return IrExpr::Undefined;
+            }
+        }
+
+        // The destructure decl is not needed for emit; we generate explicit assignments.
+        let _ = IrDestructureDecl {
+            temp_name: Some(temp_name.clone()),
+            init: IrExpr::Undefined,
+            kind: if matches!(
+                &ae.left,
+                oxc_ast::ast::AssignmentTarget::ArrayAssignmentTarget(_)
+            ) {
+                IrDestructureKind::Array { is_arraylist }
+            } else {
+                IrDestructureKind::Object {
+                    is_struct,
+                    struct_field_names,
+                }
+            },
+            bindings,
+        };
+
+        IrExpr::BlockExpr {
+            label: blk_label,
+            body: assign_stmts,
+            result: Box::new(temp_ident),
+        }
     }
 
     /// For compound-assignment expansions (`**=`, `>>>=`, `%=`, `/=`, `&&=`,

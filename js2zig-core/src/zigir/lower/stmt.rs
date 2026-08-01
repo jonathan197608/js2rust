@@ -339,11 +339,23 @@ impl Lowerer {
                 let stmts: Vec<crate::zigir::types::IrStmt> = vd
                     .declarations
                     .iter()
-                    .filter_map(|d| {
-                        let decl = self.lower_var_decl(d, is_const);
-                        match decl {
-                            IrDecl::Var(v) => Some(crate::zigir::types::IrStmt::VarDecl(v)),
-                            _ => None,
+                    .flat_map(|d| match &d.id {
+                        oxc_ast::ast::BindingPattern::ObjectPattern(_)
+                        | oxc_ast::ast::BindingPattern::ArrayPattern(_) => {
+                            // Destructuring declaration in for-init
+                            vec![self.lower_destructure_decl(d)]
+                        }
+                        _ => {
+                            let ir_decl = self.lower_var_decl(d, is_const);
+                            match ir_decl {
+                                IrDecl::Var(v) => {
+                                    vec![crate::zigir::types::IrStmt::VarDecl(v)]
+                                }
+                                IrDecl::CompileError { span, msg } => {
+                                    vec![crate::zigir::types::IrStmt::CompileError { span, msg }]
+                                }
+                                _ => vec![],
+                            }
                         }
                     })
                     .collect();
@@ -375,7 +387,14 @@ impl Lowerer {
                     {
                         Box::new(rewritten)
                     } else {
-                        Box::new(crate::zigir::types::IrStmt::Expr(self.lower_expr(expr)))
+                        // For-loop init is a statement context — set in_expr_stmt
+                        // so that `i++` emits as `i += 1` (IrExpr::Update) rather
+                        // than expanding to a BlockExpr (mirrors update position).
+                        let prev = self.in_expr_stmt;
+                        self.in_expr_stmt = true;
+                        let lowered = self.lower_expr(expr);
+                        self.in_expr_stmt = prev;
+                        Box::new(crate::zigir::types::IrStmt::Expr(lowered))
                     }
                 } else {
                     Box::new(crate::zigir::types::IrStmt::Comment(
@@ -644,7 +663,15 @@ impl Lowerer {
                     ctx.fn_local_types.insert(var.js_name.clone(), ZigType::Str);
                 }
             }
-            _ => {}
+            // StructUnroll: loop variable is always a string (field name).
+            _ => {
+                self.type_info
+                    .var_types
+                    .insert(var.js_name.clone(), ZigType::Str);
+                if let Some(ctx) = self.fn_ctx.as_mut() {
+                    ctx.fn_local_types.insert(var.js_name.clone(), ZigType::Str);
+                }
+            }
         }
 
         let iterable = if matches!(kind, IrForInKind::StructUnroll { .. }) {
@@ -659,6 +686,21 @@ impl Lowerer {
             self.lower_expr(&fis.right)
         };
         let body = self.lower_stmt_as_block(&fis.body, None);
+
+        // R42-EMIT-CF-2: StructUnroll expands to plain blocks, not loops.
+        // Unlabeled break/continue inside StructUnroll would produce invalid Zig.
+        // Labeled break/continue are fine — the emitter wraps all iterations in a
+        // labeled block so `break :label` works correctly.
+        if matches!(kind, IrForInKind::StructUnroll { .. })
+            && ir_block_has_unlabeled_break_or_continue(&body)
+        {
+            let span = self.span_to_source_span(fis.span);
+            return crate::zigir::types::IrStmt::CompileError {
+                span,
+                msg: "unlabeled break/continue in for-in over a static struct is not supported"
+                    .to_string(),
+            };
+        }
 
         // Restore var_types to pre-loop state (loop variable not visible outside)
         if let Some(t) = saved_type {
@@ -967,9 +1009,15 @@ impl Lowerer {
         fn ir_finally_has_escaping_break_or_continue(
             stmts: &[crate::zigir::types::IrStmt],
         ) -> bool {
+            // Check if a statement contains a break/continue that would escape
+            // the defer block. Break/continue inside nested loops are valid IF
+            // they are unlabeled (they target the enclosing loop). Labeled
+            // break/continue always escape (the label may refer to a loop
+            // outside the defer).
             fn check(s: &crate::zigir::types::IrStmt) -> bool {
                 use crate::zigir::types::IrStmt;
                 match s {
+                    // Any break/continue at this level escapes (not inside a loop)
                     IrStmt::Break { .. } | IrStmt::Continue { .. } => true,
                     IrStmt::If { then, else_, .. } => {
                         check_block(&then.stmts)
@@ -987,14 +1035,57 @@ impl Lowerer {
                             || check_block(&catch_block.stmts)
                             || finally.as_ref().is_some_and(|f| check_block(&f.stmts))
                     }
-                    // Loops: break/continue inside these target the loop — valid
-                    IrStmt::While { .. }
-                    | IrStmt::DoWhile { .. }
-                    | IrStmt::For { .. }
-                    | IrStmt::ForOf { .. }
-                    | IrStmt::ForIn { .. } => false,
+                    // Loops absorb unlabeled break/continue. But labeled
+                    // break/continue inside the loop body may target an outer
+                    // loop, so we check for those specifically.
+                    IrStmt::While { body, .. }
+                    | IrStmt::DoWhile { body, .. }
+                    | IrStmt::For { body, .. }
+                    | IrStmt::ForOf { body, .. }
+                    | IrStmt::ForIn { body, .. } => check_labeled_escape_block(&body.stmts),
                     _ => false,
                 }
+            }
+            // Like check_block, but only flags labeled break/continue as
+            // escaping (unlabeled ones are absorbed by the enclosing loop).
+            fn check_labeled_escape(s: &crate::zigir::types::IrStmt) -> bool {
+                use crate::zigir::types::IrStmt;
+                match s {
+                    IrStmt::Break { label: Some(_) } | IrStmt::Continue { label: Some(_) } => true,
+                    IrStmt::Break { label: None } | IrStmt::Continue { label: None } => false,
+                    IrStmt::If { then, else_, .. } => {
+                        check_labeled_escape_block(&then.stmts)
+                            || else_
+                                .as_ref()
+                                .is_some_and(|e| check_labeled_escape_block(&e.stmts))
+                    }
+                    IrStmt::Block(b) => check_labeled_escape_block(&b.stmts),
+                    IrStmt::Switch { cases, .. } => cases
+                        .iter()
+                        .any(|c| c.body.iter().any(check_labeled_escape)),
+                    IrStmt::Try {
+                        try_block,
+                        catch_block,
+                        finally,
+                        ..
+                    } => {
+                        check_labeled_escape_block(&try_block.stmts)
+                            || check_labeled_escape_block(&catch_block.stmts)
+                            || finally
+                                .as_ref()
+                                .is_some_and(|f| check_labeled_escape_block(&f.stmts))
+                    }
+                    // Nested loops also absorb unlabeled break/continue.
+                    IrStmt::While { body, .. }
+                    | IrStmt::DoWhile { body, .. }
+                    | IrStmt::For { body, .. }
+                    | IrStmt::ForOf { body, .. }
+                    | IrStmt::ForIn { body, .. } => check_labeled_escape_block(&body.stmts),
+                    _ => false,
+                }
+            }
+            fn check_labeled_escape_block(stmts: &[crate::zigir::types::IrStmt]) -> bool {
+                stmts.iter().any(check_labeled_escape)
             }
             fn check_block(stmts: &[crate::zigir::types::IrStmt]) -> bool {
                 stmts.iter().any(check)
@@ -2365,5 +2456,54 @@ impl Lowerer {
                 IrExpr::Sequence(exprs)
             }
         }
+    }
+}
+
+/// Check if an IrBlock contains any UNLABELED break or continue statements
+/// (at any depth, excluding nested loops where unlabeled break/continue are valid).
+/// Labeled break/continue are NOT counted — they target an outer scope and are
+/// valid even inside StructUnroll blocks.
+fn ir_block_has_unlabeled_break_or_continue(block: &IrBlock) -> bool {
+    block
+        .stmts
+        .iter()
+        .any(ir_stmt_has_unlabeled_break_or_continue)
+}
+
+fn ir_stmt_has_unlabeled_break_or_continue(s: &crate::zigir::types::IrStmt) -> bool {
+    use crate::zigir::types::IrStmt;
+    match s {
+        IrStmt::Break { label: None } | IrStmt::Continue { label: None } => true,
+        // Labeled break/continue target an outer scope, so they're fine.
+        IrStmt::Break { .. } | IrStmt::Continue { .. } => false,
+        IrStmt::If { then, else_, .. } => {
+            ir_block_has_unlabeled_break_or_continue(then)
+                || else_
+                    .as_ref()
+                    .is_some_and(ir_block_has_unlabeled_break_or_continue)
+        }
+        IrStmt::Block(b) => ir_block_has_unlabeled_break_or_continue(b),
+        IrStmt::Switch { cases, .. } => cases
+            .iter()
+            .any(|c| c.body.iter().any(ir_stmt_has_unlabeled_break_or_continue)),
+        IrStmt::Try {
+            try_block,
+            catch_block,
+            finally,
+            ..
+        } => {
+            ir_block_has_unlabeled_break_or_continue(try_block)
+                || ir_block_has_unlabeled_break_or_continue(catch_block)
+                || finally
+                    .as_ref()
+                    .is_some_and(ir_block_has_unlabeled_break_or_continue)
+        }
+        // Don't recurse into loops — break/continue inside them target the loop
+        IrStmt::While { .. }
+        | IrStmt::DoWhile { .. }
+        | IrStmt::For { .. }
+        | IrStmt::ForOf { .. }
+        | IrStmt::ForIn { .. } => false,
+        _ => false,
     }
 }

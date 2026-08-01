@@ -324,7 +324,9 @@ impl Emitter {
                 self.writeln(&format!("const {} = {}.key_ptr.*;", var.zig_name, kv_name));
                 self.emit_block_stmts_unlabeled(body);
                 // Suppress unused-variable error when key is not referenced in body
-                self.writeln(&format!("_ = &{};", var.zig_name));
+                if !Self::block_always_exits(body) {
+                    self.writeln(&format!("_ = &{};", var.zig_name));
+                }
                 self.indent_pop();
                 self.writeln("}");
             }
@@ -350,7 +352,9 @@ impl Emitter {
                 self.writeln(&format!("const {} = {}.key_ptr.*;", var.zig_name, kv_name));
                 self.emit_block_stmts_unlabeled(body);
                 // Suppress unused-variable error when key is not referenced in body
-                self.writeln(&format!("_ = &{};", var.zig_name));
+                if !Self::block_always_exits(body) {
+                    self.writeln(&format!("_ = &{};", var.zig_name));
+                }
                 self.indent_pop();
                 self.writeln("}");
             }
@@ -378,7 +382,9 @@ impl Emitter {
                     ));
                     self.emit_block_stmts_unlabeled(body);
                     // Suppress unused-variable error when key is not referenced in body
-                    self.writeln(&format!("_ = &{};", var.zig_name));
+                    if !Self::block_always_exits(body) {
+                        self.writeln(&format!("_ = &{};", var.zig_name));
+                    }
                     self.indent_pop();
                     self.writeln("}");
                 }
@@ -475,12 +481,14 @@ impl Emitter {
                 // Suppress unused-variable errors for destructured vars that
                 // the body doesn't reference (e.g., `for (const [k, v] of m)`
                 // where only v is used). Taking the address marks it as "used".
-                if *is_map && !destructure_vars.is_empty() {
-                    for dv in destructure_vars {
-                        self.writeln(&format!("_ = &{};", dv.zig_name));
+                if !Self::block_always_exits(body) {
+                    if *is_map && !destructure_vars.is_empty() {
+                        for dv in destructure_vars {
+                            self.writeln(&format!("_ = &{};", dv.zig_name));
+                        }
+                    } else {
+                        self.writeln(&format!("_ = &{};", var.zig_name));
                     }
-                } else {
-                    self.writeln(&format!("_ = &{};", var.zig_name));
                 }
                 self.indent_pop();
                 self.writeln("}");
