@@ -236,6 +236,15 @@ impl Lowerer {
             is_rest || is_arguments
         };
 
+        // Mutating methods (splice, copyWithin, fill) cannot operate on
+        // []const slices (rest params / arguments). Fall back to BuiltinCall.
+        if receiver_is_slice {
+            use crate::zigir::types::ArrayMethodKind as AMK;
+            if matches!(kind, AMK::Splice | AMK::CopyWithin | AMK::Fill) {
+                return None;
+            }
+        }
+
         Some(IrExpr::ArrayMethodInline(Box::new(IrArrayMethodInline {
             kind,
             obj_name,

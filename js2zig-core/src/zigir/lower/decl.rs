@@ -610,13 +610,22 @@ impl Lowerer {
                     });
                 }
 
-                // Collect default expression references from AST
+                // LOW-E: Collect default expression references from AST,
+                // applying the same filtering as Phase 1 (skip properties
+                // whose key or binding name cannot be resolved) to keep
+                // default_index aligned with default_exprs.
                 let default_exprs: Vec<&Expression> = op
                     .properties
                     .iter()
-                    .filter_map(|prop| match &prop.value {
-                        BindingPattern::AssignmentPattern(ap) => Some(&ap.right),
-                        _ => None,
+                    .filter_map(|prop| {
+                        // Skip if key name cannot be resolved (matches Phase 1)
+                        property_key_name(&prop.key)?;
+                        // Skip if binding name cannot be resolved (matches Phase 1)
+                        binding_name_and_default(&prop.value)?;
+                        match &prop.value {
+                            BindingPattern::AssignmentPattern(ap) => Some(&ap.right),
+                            _ => None,
+                        }
                     })
                     .collect();
 
@@ -725,14 +734,21 @@ impl Lowerer {
                     });
                 }
 
-                // Collect default expression references from AST
+                // LOW-E: Collect default expression references from AST,
+                // applying the same filtering as Phase 1 (skip holes and
+                // patterns whose binding name cannot be resolved) to keep
+                // default_index aligned with default_exprs.
                 let default_exprs: Vec<&Expression> = ap
                     .elements
                     .iter()
                     .flatten()
-                    .filter_map(|pattern| match pattern {
-                        BindingPattern::AssignmentPattern(ap_inner) => Some(&ap_inner.right),
-                        _ => None,
+                    .filter_map(|pattern| {
+                        // Skip if binding name cannot be resolved (matches Phase 1)
+                        binding_name_and_default(pattern)?;
+                        match pattern {
+                            BindingPattern::AssignmentPattern(ap_inner) => Some(&ap_inner.right),
+                            _ => None,
+                        }
                     })
                     .collect();
 
