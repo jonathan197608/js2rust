@@ -478,6 +478,29 @@ impl Lowerer {
 
             let obj_expr = inner_expr.map(Box::new);
 
+            // EMIT-B5: For JsNumber methods (toFixed, toString, etc.), the
+            // runtime expects f64. If obj_name is set but obj_expr is None
+            // (simple variable receiver), attach obj_expr with the variable's
+            // type so the emitter can correctly coerce i64→f64 vs. use f64
+            // as-is vs. JsAny.asF64().
+            let obj_expr = if obj_expr.is_none() && module == BuiltinModule::JsNumber {
+                if let Some(name) = &obj_name {
+                    if let Some(var_type) = self.get_var_type(name.as_str()) {
+                        let ident = self.make_ident(name);
+                        Some(Box::new(crate::zigir::types::IrExpr::TypedIdent {
+                            ident,
+                            ty: var_type,
+                        }))
+                    } else {
+                        None
+                    }
+                } else {
+                    None
+                }
+            } else {
+                obj_expr
+            };
+
             return IrExpr::BuiltinCall(crate::zigir::types::IrBuiltinCall {
                 module,
                 method,
@@ -899,7 +922,7 @@ impl Lowerer {
                     {
                         self.lower_expr(expr)
                     } else {
-                        crate::zigir::types::IrExpr::IntLiteral(0)
+                        crate::zigir::types::IrExpr::FloatLiteral(0.0)
                     };
                 }
                 "Boolean" => {

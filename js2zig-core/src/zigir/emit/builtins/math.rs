@@ -41,12 +41,16 @@ pub(super) fn expr_is_float(expr: &crate::zigir::types::IrExpr) -> bool {
             op,
             left_type,
             right_type,
-            ..
+            left,
+            right,
         } => {
             // Division always produces f64 in JS semantics
             *op == BinOp::Div
                 || left_type.as_ref() == Some(&ZigType::F64)
                 || right_type.as_ref() == Some(&ZigType::F64)
+                // FloatLiteral operands imply f64 result
+                || matches!(left.as_ref(), IrExpr::FloatLiteral(_))
+                || matches!(right.as_ref(), IrExpr::FloatLiteral(_))
         }
         IrExpr::Unary { operand_type, .. } => operand_type.as_ref() == Some(&ZigType::F64),
         IrExpr::BuiltinCall(bc) => bc.return_type == ZigType::F64,
@@ -349,7 +353,7 @@ impl Emitter {
 
         // Any float-shaped arg ⇒ use f64 emit for all args (Zig cannot
         // `@as(i64, x)` a non-int value, and cannot compare i64 vs f64).
-        let any_float = args.iter().any(expr_is_float);
+        let any_float = args.iter().any(|a| expr_is_float(a) || expr_is_jsany(a));
 
         match args.len() {
             0 => {

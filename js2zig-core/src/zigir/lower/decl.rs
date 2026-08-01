@@ -480,7 +480,7 @@ impl Lowerer {
             && let Some(suffix) = Self::typedarray_type_suffix(n)
             && let Some(ctx) = self.fn_ctx.as_mut()
         {
-            ctx.add_typedarray_var(&ident.zig_name, suffix);
+            ctx.add_typedarray_var(&ident.js_name, suffix);
         }
 
         // Register RegExp variables (for .test()/.exec() method dispatch in lower_call)
@@ -488,7 +488,7 @@ impl Lowerer {
             && Self::is_regexp_expr(expr)
             && let Some(ctx) = self.fn_ctx.as_mut()
         {
-            ctx.add_regexp_var(&ident.zig_name);
+            ctx.add_regexp_var(&ident.js_name);
         }
 
         // needs_deinit: true for Map/Set/BigInt/ArrayList/RegExp types and will be checked for class
@@ -623,6 +623,11 @@ impl Lowerer {
                 // Phase 2: Build IrDestructureBindingDecl (can call self.lower_expr now)
                 let mut bindings = Vec::new();
                 for rb in raw_bindings {
+                    // LOW-C: Register each destructure binding in fn_scope_vars
+                    // so shadow detection works for subsequent declarations.
+                    if let Some(ctx) = self.fn_ctx.as_mut() {
+                        ctx.add_scope_var(&rb.bind_name);
+                    }
                     let default_ir = if rb.has_default {
                         default_exprs
                             .get(rb.default_index)
@@ -734,6 +739,11 @@ impl Lowerer {
                 // Phase 2: Build IrDestructureBindingDecl
                 let mut bindings = Vec::new();
                 for rb in raw_bindings {
+                    // LOW-C: Register each destructure binding in fn_scope_vars
+                    // so shadow detection works for subsequent declarations.
+                    if let Some(ctx) = self.fn_ctx.as_mut() {
+                        ctx.add_scope_var(&rb.bind_name);
+                    }
                     let default_ir = if rb.has_default {
                         default_exprs
                             .get(rb.default_index)

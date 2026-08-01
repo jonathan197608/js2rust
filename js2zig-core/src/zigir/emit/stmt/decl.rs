@@ -484,8 +484,18 @@ impl Emitter {
                 self.emit_expr(init);
             }
         } else {
-            // No initializer
-            self.write(&format!("{} {}", kw, vd.name.zig_name));
+            // No initializer — emit `undefined` so Zig accepts the declaration.
+            // `const x;` is a compile error in Zig; `var x: T = undefined;` is valid.
+            if let Some(ty) = &vd.zig_type {
+                self.write(&format!(
+                    "{} {}: {} = undefined",
+                    kw,
+                    vd.name.zig_name,
+                    ty.to_zig_type()
+                ));
+            } else {
+                self.write(&format!("{} {} = undefined", kw, vd.name.zig_name));
+            }
         }
 
         self.write(";\n");

@@ -92,7 +92,18 @@ impl Lowerer {
                         PropertyKey::StaticIdentifier(id) => (id.name.to_string(), false),
                         PropertyKey::StringLiteral(sl) => (sl.value.to_string(), false),
                         PropertyKey::NumericLiteral(nl) => (nl.value.to_string(), false),
-                        _ => ("__computed__".to_string(), true),
+                        _ => {
+                            // Computed property keys { [expr]: value } are not
+                            // supported — Zig struct field names must be known
+                            // at compile time. Emit a compile error instead
+                            // of silently using a placeholder name.
+                            let span = self.span_to_source_span(op.span);
+                            self.add_error(
+                                span,
+                                "computed property key `{ [expr]: value }` is not supported in object literal",
+                            );
+                            ("__computed__".to_string(), true)
+                        }
                     };
 
                     match op.kind {

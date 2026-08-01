@@ -13,7 +13,7 @@ use crate::zigir::emit::Emitter;
 impl Emitter {
     /// Return the items access suffix for a receiver: ".items" for ArrayList,
     /// empty string for rest-param slices ([]const JsAny).
-    fn items_path(&self, receiver: &str) -> &str {
+    pub(super) fn items_path(&self, receiver: &str) -> &str {
         if self.rest_param_names.contains(receiver) {
             ""
         } else {

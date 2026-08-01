@@ -1240,10 +1240,13 @@ return n.toString();
 "#;
     let zig = transpile_and_check(js, "test_native_proto_number_tostring_var_i64_no_radix");
     // I64 variable receiver, no-radix: lowerer rewrites DateToString→JsNumber,
-    // emitter adds the ECMA-262 default radix 10.
+    // emitter coerces i64→f64 (runtime expects f64) and adds the ECMA-262
+    // default radix 10.
     assert!(
-        zig.contains("js_number.toString(js_allocator.allocator(), n, 10)"),
-        "Expected 'js_number.toString(js_allocator.allocator(), n, 10)' in:\n{}",
+        zig.contains(
+            "js_number.toString(js_allocator.allocator(), @as(f64, @floatFromInt(n)), 10)"
+        ),
+        "Expected 'js_number.toString(js_allocator.allocator(), @as(f64, @floatFromInt(n)), 10)' in:\n{}",
         zig
     );
 }

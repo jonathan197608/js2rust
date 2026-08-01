@@ -501,17 +501,76 @@ impl Emitter {
         }
     }
 
-    pub(super) fn emit_number_builtin(&mut self, method: &str, obj: Option<&str>, args: &[IrExpr]) {
+    pub(super) fn emit_number_builtin(
+        &mut self,
+        method: &str,
+        obj: Option<&str>,
+        obj_expr: Option<&crate::zigir::types::IrExpr>,
+        args: &[IrExpr],
+    ) {
+        // Helper: render the receiver for js_number runtime methods that
+        // expect f64. If the receiver expr is i64, coerce with
+        // @as(f64, @floatFromInt(...)). If it's JsAny, coerce with
+        // .asF64(). If it's already f64, use as-is. If no type info is
+        // available (obj_expr is None), assume i64 as a safe default.
+        use crate::zigir::emit::builtins::math::{expr_is_float, expr_is_jsany};
+        let receiver_str = match (obj, obj_expr) {
+            (Some(name), Some(expr)) => {
+                if expr_is_float(expr) {
+                    name.to_string()
+                } else if expr_is_jsany(expr) {
+                    format!("({}.asF64())", name)
+                } else if matches!(
+                    expr,
+                    crate::zigir::types::IrExpr::TypedIdent {
+                        ty: ZigType::I64,
+                        ..
+                    }
+                ) {
+                    // Explicit i64 variable — needs @floatFromInt
+                    format!("@as(f64, @floatFromInt({}))", name)
+                } else {
+                    // comptime_float or unknown — @as(f64, expr) handles
+                    // comptime_float→f64 implicitly. This covers expressions
+                    // like (0.1 + 0.2) whose Binary node may not carry
+                    // left_type/right_type annotations.
+                    format!("@as(f64, {})", name)
+                }
+            }
+            (Some(name), None) => {
+                // No type info — assume the receiver is already f64
+                // (the lowering layer attaches obj_expr for i64/JsAny vars)
+                name.to_string()
+            }
+            (None, Some(expr)) => {
+                // Inline expression (method chaining). Render it.
+                let rendered = self.render_expr_to_string(expr);
+                if expr_is_float(expr) || expr_is_jsany(expr) {
+                    rendered
+                } else if matches!(
+                    expr,
+                    crate::zigir::types::IrExpr::TypedIdent {
+                        ty: ZigType::I64,
+                        ..
+                    }
+                ) {
+                    format!("@as(f64, @floatFromInt({}))", rendered)
+                } else {
+                    format!("@as(f64, {})", rendered)
+                }
+            }
+            (None, None) => String::new(),
+        };
         match method {
             "toFixed" | "toExponential" | "toPrecision" => {
-                // js_number.toFixed(js_allocator.allocator(), obj, digits)
+                // js_number.toFixed(js_allocator.allocator(), val: f64, digits)
                 // These runtime methods return ![]const u8 (RangeError on bad
                 // digit counts, plus OOM). Use inside_try_block to propagate
                 // errors to catch handler; otherwise @panic with RangeError msg.
                 self.write(&format!("js_number.{}(js_allocator.allocator(), ", method));
                 let mut first = true;
-                if let Some(name) = obj {
-                    self.write(name);
+                if !receiver_str.is_empty() {
+                    self.write(&receiver_str);
                     first = false;
                 }
                 for arg in args.iter() {
@@ -538,8 +597,8 @@ impl Emitter {
             "toString" => {
                 self.write("js_number.toString(js_allocator.allocator(), ");
                 let mut first = true;
-                if let Some(name) = obj {
-                    self.write(name);
+                if !receiver_str.is_empty() {
+                    self.write(&receiver_str);
                     first = false;
                 }
                 for arg in args.iter() {

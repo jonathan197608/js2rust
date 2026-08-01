@@ -42,7 +42,9 @@ impl Emitter {
             BuiltinModule::JsDate => self.emit_date_builtin(&bc.method, obj, &bc.args),
             BuiltinModule::JsJson => self.emit_json_builtin(&bc.method, &bc.args),
             BuiltinModule::JsObject => self.emit_object_builtin(&bc.method, &bc.args),
-            BuiltinModule::JsNumber => self.emit_number_builtin(&bc.method, obj, &bc.args),
+            BuiltinModule::JsNumber => {
+                self.emit_number_builtin(&bc.method, obj, bc.obj_expr.as_deref(), &bc.args)
+            }
             BuiltinModule::JsSymbol => self.emit_symbol_builtin(&bc.method, obj, &bc.args),
             BuiltinModule::JsConsole => self.emit_console_builtin(&bc.method, &bc.args),
             BuiltinModule::JsMath => self.emit_math_builtin(&bc.method, &bc.args),

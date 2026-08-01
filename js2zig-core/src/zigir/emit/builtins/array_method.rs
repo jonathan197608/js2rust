@@ -100,29 +100,45 @@ impl Emitter {
         let (receiver, binding) = self.resolve_receiver(&data.obj_expr, &data.obj_name);
         let has_from = data.args.len() >= 2;
 
-        // If the array is a string type, use std.mem.indexOf or runtime
         if matches!(data.elem_type, ZigType::Str) {
-            let blk = self.begin_labeled_block(&binding);
+            // Str-typed arrays are ArrayList([]const u8). We must iterate
+            // .items and compare each element, not use std.mem.indexOf on
+            // the whole ArrayList (which would be a type mismatch).
             if has_from {
-                // With fromIndex: delegate to runtime for UTF-16 semantics
-                self.write(&format!("break :{} js_string.includes(", blk));
-                self.write(&receiver);
-                self.write(", ");
+                let blk = self.begin_labeled_block(&binding);
+                let (_from, _len, _start, _i) = (
+                    format!("_fr_{}", blk),
+                    format!("_ln_{}", blk),
+                    format!("_st_{}", blk),
+                    format!("_i_{}", blk),
+                );
+                self.write(&format!("const {}: isize = @intCast(", _from));
+                self.emit_i64_coerced(&data.args[1]);
+                self.write(&format!(
+                    "); const {} = {}.items.len; const {}: usize = @intCast(if ({} < 0) @max(0, @as(isize, @intCast({})) + {}) else @min(@as(usize, @intCast({})), {})); var {}: usize = {}; while ({} < {}) : ({} += 1) {{ if (std.mem.eql(u8, {}.items[{}], ",
+                    _len, receiver, _start, _from, _len, _from, _from, _len, _i, _start, _i, _len, _i, receiver, _i
+                ));
                 if let Some(arg) = data.args.first() {
                     self.emit_expr(arg);
                 }
-                self.write(", ");
-                self.emit_expr(&data.args[1]);
-                self.write("); })");
+                self.write(&format!(
+                    ")) break :{} true; }} break :{} false; }})",
+                    blk, blk
+                ));
             } else {
-                // No fromIndex: fast inline byte search
-                self.write(&format!("break :{} (std.mem.indexOf(u8, ", blk));
-                self.write(&receiver);
-                self.write(", ");
+                let blk = self.begin_labeled_block(&binding);
+                self.write(&format!("for ({}.items) |item| ", receiver));
+                self.write("{\n");
+                self.indent_push();
+                self.writeln("if (std.mem.eql(u8, item, ");
                 if let Some(arg) = data.args.first() {
                     self.emit_expr(arg);
                 }
-                self.write(") != null); })");
+                self.write(&format!(")) break :{} true;", blk));
+                self.indent_pop();
+                self.writeln("");
+                self.write("}");
+                self.write(&format!(" break :{} false; }})", blk));
             }
         } else if has_from {
             // Array path with fromIndex: clamp to [0, len] and iterate from start
@@ -170,25 +186,44 @@ impl Emitter {
         let has_from = data.args.len() >= 2;
 
         if matches!(data.elem_type, ZigType::Str) {
-            let blk = self.begin_labeled_block(&binding);
+            // Str-typed arrays are ArrayList([]const u8). Iterate and compare
+            // each element with std.mem.eql instead of std.mem.indexOf
+            // (which expects []const u8, not [][]const u8).
             if has_from {
-                self.write(&format!("break :{} js_string.indexOf(", blk));
-                self.write(&receiver);
-                self.write(", ");
+                let blk = self.begin_labeled_block(&binding);
+                let (_from, _len, _start, _i) = (
+                    format!("_fr_{}", blk),
+                    format!("_ln_{}", blk),
+                    format!("_st_{}", blk),
+                    format!("_i_{}", blk),
+                );
+                self.write(&format!("const {}: isize = @intCast(", _from));
+                self.emit_i64_coerced(&data.args[1]);
+                self.write(&format!(
+                    "); const {} = {}.items.len; const {}: usize = @intCast(if ({} < 0) @max(0, @as(isize, @intCast({})) + {}) else @min(@as(usize, @intCast({})), {})); var {}: usize = {}; while ({} < {}) : ({} += 1) {{ if (std.mem.eql(u8, {}.items[{}], ",
+                    _len, receiver, _start, _from, _len, _from, _from, _len, _i, _start, _i, _len, _i, receiver, _i
+                ));
                 if let Some(arg) = data.args.first() {
                     self.emit_expr(arg);
                 }
-                self.write(", ");
-                self.emit_expr(&data.args[1]);
-                self.write("); })");
+                self.write(&format!(
+                    ")) break :{} @as(i64, @intCast({})); }} break :{} @as(i64, -1); }})",
+                    blk, _i, blk
+                ));
             } else {
-                self.write(&format!("break :{} (if (std.mem.indexOf(u8, ", blk));
-                self.write(&receiver);
-                self.write(", ");
+                let blk = self.begin_labeled_block(&binding);
+                self.write(&format!("for ({}.items, 0..) |item, i| ", receiver));
+                self.write("{\n");
+                self.indent_push();
+                self.writeln("if (std.mem.eql(u8, item, ");
                 if let Some(arg) = data.args.first() {
                     self.emit_expr(arg);
                 }
-                self.write(")) |idx| @as(i64, @intCast(idx)) else @as(i64, -1)); })");
+                self.write(&format!(")) break :{} @as(i64, @intCast(i));", blk));
+                self.indent_pop();
+                self.writeln("");
+                self.write("}");
+                self.write(&format!(" break :{} @as(i64, -1); }})", blk));
             }
         } else if has_from {
             let blk = self.begin_labeled_block(&binding);
@@ -577,7 +612,11 @@ impl Emitter {
             _ce, _er, _ln, _er, _er, _ln
         ));
         // Use existing copyWithin logic with forward/backward copy based on overlap.
-        self.write(&format!("const {} = {} -| {}; ", _cc, _ce, _cs));
+        // Clamp copy count to available target space to avoid out-of-bounds writes.
+        self.write(&format!(
+            "const {} = @min({} -| {}, {} -| {}); ",
+            _cc, _ce, _cs, _ln, _tg
+        ));
         self.write(&format!("if ({} > 0) {{ ", _cc));
         // Use reverse copy when target > start to avoid overwriting source
         self.write(&format!(

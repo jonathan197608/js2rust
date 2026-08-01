@@ -222,13 +222,27 @@ impl Lowerer {
             .cloned()
             .unwrap_or(ZigType::JsAny);
 
+        // EMIT-B3: Detect if the receiver is a slice ([]const JsAny) rather
+        // than an ArrayList. This happens for rest parameters (...args) and
+        // the `arguments` pseudo-variable (__arguments), which are lowered as
+        // []const JsAny slices that do not have a `.items` field.
+        let receiver_is_slice = {
+            let is_rest = self
+                .fn_ctx
+                .as_ref()
+                .and_then(|ctx| ctx.rest_param_name.as_deref())
+                .is_some_and(|rname| rname == obj_name);
+            let is_arguments = obj_name == "__arguments" || obj_name == "arguments";
+            is_rest || is_arguments
+        };
+
         Some(IrExpr::ArrayMethodInline(Box::new(IrArrayMethodInline {
             kind,
             obj_name,
             obj_expr: None,
             elem_type,
             args: args.to_vec(),
-            receiver_is_slice: false,
+            receiver_is_slice,
         })))
     }
 

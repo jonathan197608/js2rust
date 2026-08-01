@@ -107,8 +107,12 @@ impl Emitter {
                         name, method
                     ));
                 } else {
+                    // No receiver — this path is reached when the date method
+                    // is called without an instance (e.g., misrouted toString).
+                    // Emit a compile error rather than calling js_date.method()
+                    // which would treat the module as an instance.
                     self.write(&format!(
-                        "js_date.{}(js_allocator.allocator()) catch @panic(\"OOM: Date method\")",
+                        "@compileError(\"Date.{}() requires a Date instance receiver\")",
                         method
                     ));
                 }
