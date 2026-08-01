@@ -206,13 +206,14 @@ impl Lowerer {
         // static field names already registered in class_static_fields during pre-scan
 
         // Compute needs_deinit: true if any field is Map, Set, ArrayList, BigInt,
-        // RegExp, or a NamedStruct that itself needs deinit (nested class).
+        // RegExp, JsError, or a NamedStruct that itself needs deinit (nested class).
         let needs_deinit = fields.iter().any(|f| {
             matches!(
                 f.zig_type,
                 ZigType::NamedStruct(ref n) if n == "Map" || n == "Set" || n == "RegExp"
             ) || matches!(f.zig_type, ZigType::ArrayList(_))
                 || matches!(f.zig_type, ZigType::BigInt)
+                || matches!(f.zig_type, ZigType::JsError)
         });
 
         Some(IrClassDecl {
@@ -244,8 +245,25 @@ impl Lowerer {
         for stmt in stmts {
             match stmt {
                 Statement::ExpressionStatement(es) => {
-                    if let Expression::AssignmentExpression(ae) = &es.expression {
-                        self.register_implicit_field(ae, class_name, field_names, fields);
+                    match &es.expression {
+                        Expression::AssignmentExpression(ae) => {
+                            self.register_implicit_field(ae, class_name, field_names, fields);
+                        }
+                        Expression::UpdateExpression(ue) => {
+                            // this.x++ / this.x-- — register the field if not already present
+                            if let Some(fname) =
+                                self.extract_this_field_name_from_simple_target(&ue.argument)
+                                && !field_names.contains(&fname)
+                            {
+                                field_names.push(fname.clone());
+                                fields.push(crate::zigir::types::IrClassField {
+                                    name: fname,
+                                    zig_type: ZigType::JsAny,
+                                    default: None,
+                                });
+                            }
+                        }
+                        _ => {}
                     }
                 }
                 Statement::IfStatement(is) => {

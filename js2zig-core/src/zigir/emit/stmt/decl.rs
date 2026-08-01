@@ -623,7 +623,8 @@ impl Emitter {
                         if n == "Map" || n == "Set" || n == "RegExp"
                             || self.class_needs_deinit.contains(n.as_str())
                 ) || matches!(&field.zig_type, ZigType::ArrayList(_))
-                    || matches!(&field.zig_type, ZigType::BigInt);
+                    || matches!(&field.zig_type, ZigType::BigInt)
+                    || matches!(&field.zig_type, ZigType::JsError);
                 if needs_field_deinit {
                     self.writeln(&format!("self.{}.deinit(alloc);", zig_ident(&field.name)));
                 }

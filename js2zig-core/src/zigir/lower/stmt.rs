@@ -1176,7 +1176,13 @@ impl Lowerer {
                     || Self::expr_references_name(&dws.test, name)
             }
             Statement::ForStatement(fs) => {
-                Self::stmt_references_name(&fs.body, name)
+                fs.init.as_ref().is_some_and(|init| {
+                    if let Some(expr) = init.as_expression() {
+                        Self::expr_references_name(expr, name)
+                    } else {
+                        false
+                    }
+                }) || Self::stmt_references_name(&fs.body, name)
                     || fs
                         .test
                         .as_ref()

@@ -96,8 +96,10 @@ impl Lowerer {
             use crate::zigir::kinds::MethodObjectKind;
             use crate::zigir::types::{IrCallExpr, IrStmt, IrVarDecl};
 
-            let temp_name = self.name_mangler.next_name("_oc");
-            let block_label = format!("_oc_blk_{}", self.name_mangler.peek_count("_oc"));
+            let count = self.name_mangler.peek_count("_oc");
+            let temp_name = format!("_oc_{}", count);
+            let block_label = format!("_oc_blk_{}", count);
+            self.name_mangler.next_name("_oc");
 
             let temp_ident = |n: &str| IrExpr::Ident(IrIdent::new(n));
 
@@ -210,8 +212,10 @@ impl Lowerer {
             use crate::zigir::kinds::MethodObjectKind;
             use crate::zigir::types::{IrCallExpr, IrStmt, IrVarDecl};
 
-            let temp_name = self.name_mangler.next_name("_oc");
-            let block_label = format!("_oc_blk_{}", self.name_mangler.peek_count("_oc"));
+            let count = self.name_mangler.peek_count("_oc");
+            let temp_name = format!("_oc_{}", count);
+            let block_label = format!("_oc_blk_{}", count);
+            self.name_mangler.next_name("_oc");
             let args = self.lower_args(&call_ce.arguments);
 
             let temp_ident = |n: &str| IrExpr::Ident(IrIdent::new(n));
@@ -261,8 +265,10 @@ impl Lowerer {
             use crate::zigir::kinds::MethodObjectKind;
             use crate::zigir::types::{IrCallExpr, IrStmt, IrVarDecl};
 
-            let temp_name = self.name_mangler.next_name("_oc");
-            let block_label = format!("_oc_blk_{}", self.name_mangler.peek_count("_oc"));
+            let count = self.name_mangler.peek_count("_oc");
+            let temp_name = format!("_oc_{}", count);
+            let block_label = format!("_oc_blk_{}", count);
+            self.name_mangler.next_name("_oc");
             let args = self.lower_args(&call_ce.arguments);
 
             let temp_ident = |n: &str| IrExpr::Ident(IrIdent::new(n));

@@ -318,6 +318,19 @@ fn stmt_has_switch_break(stmt: &oxc_ast::ast::Statement) -> bool {
         | Statement::ForStatement(_)
         | Statement::ForOfStatement(_)
         | Statement::ForInStatement(_) => false,
+        // Recurse into try/catch/finally — a break in any of these
+        // blocks targets the enclosing switch, not the try statement.
+        Statement::TryStatement(ts) => {
+            ts.block.body.iter().any(stmt_has_switch_break)
+                || ts
+                    .handler
+                    .as_ref()
+                    .is_some_and(|h| h.body.body.iter().any(stmt_has_switch_break))
+                || ts
+                    .finalizer
+                    .as_ref()
+                    .is_some_and(|f| f.body.iter().any(stmt_has_switch_break))
+        }
         _ => false,
     }
 }

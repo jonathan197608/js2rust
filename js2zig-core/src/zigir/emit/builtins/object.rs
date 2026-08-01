@@ -570,12 +570,12 @@ impl Emitter {
                 }
             }
             "parseInt" => {
+                // parseInt is a static method on Number (Number.parseInt(str)),
+                // not an instance method. The `obj` (e.g. "Number") is the
+                // constructor name, not a valid Zig value — ignore it.
                 self.write("js_number.parseInt(");
-                if let Some(name) = obj {
-                    self.write(name);
-                }
                 for (i, arg) in args.iter().enumerate() {
-                    if i > 0 || obj.is_some() {
+                    if i > 0 {
                         self.write(", ");
                     }
                     self.emit_expr(arg);

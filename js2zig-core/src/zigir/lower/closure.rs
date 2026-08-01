@@ -619,6 +619,20 @@ impl Lowerer {
                 });
             }
         }
+        // Handle rest parameter (...args) → []const JsAny
+        if let Some(rname) = arrow
+            .params
+            .rest
+            .as_ref()
+            .and_then(|r| crate::infer::binding_name(&r.rest.argument))
+        {
+            params.push(IrParam {
+                name: self.make_ident(rname),
+                zig_type: ZigType::Anytype,
+                is_unused: false,
+                is_rest: true,
+            });
+        }
         params
     }
 
@@ -907,6 +921,22 @@ impl Lowerer {
         }
         if matches!(expr, Expression::ThisExpression(_)) {
             found.set(true);
+            return;
+        }
+        // Arrow functions do NOT bind their own `this` — they inherit it
+        // from the enclosing scope. So we must recurse into the arrow body
+        // to detect `this` references. for_each_expr_child routes both
+        // FunctionExpression and ArrowFunctionExpression to on_fn_scope,
+        // which stops recursion. We handle arrow functions here first so
+        // their body is scanned; FunctionExpression correctly stops (it
+        // binds its own this).
+        if let Expression::ArrowFunctionExpression(af) = expr {
+            for stmt in &af.body.statements {
+                Self::scan_stmt_for_this(stmt, found);
+                if found.get() {
+                    return;
+                }
+            }
             return;
         }
         crate::infer::ast_walk::for_each_expr_child(

@@ -790,11 +790,7 @@ impl Lowerer {
 
         // Check if this is an async host function call
         if let Expression::CallExpression(call) = &ae.argument {
-            let args: Vec<_> = call
-                .arguments
-                .iter()
-                .filter_map(|a| a.as_expression().map(|e| self.lower_expr(e)))
-                .collect();
+            let args = self.lower_args(&call.arguments);
 
             // Host async: callee is an identifier found in async_host_fns
             if let Expression::Identifier(id) = &call.callee {

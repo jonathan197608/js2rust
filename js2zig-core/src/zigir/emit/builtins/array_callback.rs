@@ -578,12 +578,20 @@ impl Emitter {
         // For reduce, the for-loop captures the current element.
         // The first callback param (elem_param, e.g., "acc") aliases the accumulator.
         // The second callback param (idx_param, e.g., "x") is the current element.
-        let loop_var = if !data.idx_param.is_empty() && data.idx_param != "_" {
+        // When the callback has only one param, elem_param IS the accumulator name
+        // and must be bound to acc_name — we use a synthetic loop variable for the
+        // element to avoid the name collision.
+        let (loop_var, needs_acc_bind) = if !data.idx_param.is_empty() && data.idx_param != "_" {
             // Two-param callback: use idx_param as the loop variable (current element)
-            data.idx_param.clone()
+            (data.idx_param.clone(), true)
+        } else if data.elem_param != "_" {
+            // Single-param callback: elem_param is the accumulator — use a
+            // synthetic name for the element loop variable and bind elem_param
+            // to the accumulator.
+            (format!("_elem_{}", blk), true)
         } else {
-            // Single-param callback or no second param: use elem_param as loop variable
-            data.elem_param.clone()
+            // No named params (both "_") — just use a throwaway loop var
+            (format!("_elem_{}", blk), false)
         };
 
         if has_init {
@@ -606,8 +614,9 @@ impl Emitter {
         self.indent_push();
 
         // Bind elem_param to the accumulator when it differs from the loop variable
-        // (i.e., when the callback has two params and elem_param is "acc")
-        if data.elem_param != "_" && data.elem_param != loop_var {
+        // (i.e., two-param callback where elem_param is "acc", or single-param
+        // where elem_param is the accumulator and loop_var is synthetic)
+        if needs_acc_bind && data.elem_param != "_" && data.elem_param != loop_var {
             self.writeln(&format!("const {} = {};", data.elem_param, acc_name));
         }
 
@@ -724,12 +733,15 @@ impl Emitter {
         };
         self.write(&format!("var {}: {} = {}; ", acc_name, acc_type, init_val));
 
-        // Use reverse iteration (same pattern as findLast/findLastIndex).
-        // The loop variable is the current element.
-        let loop_var = if !data.idx_param.is_empty() && data.idx_param != "_" {
-            data.idx_param.clone()
+        // Same single/duo param logic as reduce: for single-param callbacks,
+        // elem_param is the accumulator — use a synthetic element loop var.
+        let blk_for_var = blk.clone();
+        let (loop_var, needs_acc_bind) = if !data.idx_param.is_empty() && data.idx_param != "_" {
+            (data.idx_param.clone(), true)
+        } else if data.elem_param != "_" {
+            (format!("_elem_{}", blk_for_var), true)
         } else {
-            data.elem_param.clone()
+            (format!("_elem_{}", blk_for_var), false)
         };
         // Reverse loop header: var __i: usize = receiver.items.len; while (__i > 0) { __i -= 1; const loop_var = receiver.items[__i];
         // When no initial value: start from len-2 (last element is the initial accumulator)
@@ -753,7 +765,7 @@ impl Emitter {
         self.indent_push();
 
         // Bind elem_param to the accumulator when it differs from the loop variable
-        if data.elem_param != "_" && data.elem_param != loop_var {
+        if needs_acc_bind && data.elem_param != "_" && data.elem_param != loop_var {
             self.writeln(&format!("const {} = {};", data.elem_param, acc_name));
         }
 

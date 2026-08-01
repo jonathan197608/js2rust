@@ -309,14 +309,16 @@ impl Emitter {
         match method {
             "push" => {
                 if let Some(name) = obj {
-                    for (i, arg) in args.iter().enumerate() {
-                        if i > 0 {
-                            self.write(", ");
-                        }
+                    // Wrap in a block to allow multiple append calls as statements
+                    // and return the new length (matching JS Array.push semantics).
+                    let blk = self.next_label();
+                    self.write(&format!("blk_{}: {{ ", blk));
+                    for arg in args.iter() {
                         self.write(&format!("{}.append(js_allocator.allocator(), ", name));
                         self.emit_expr(arg);
-                        self.write(") catch @panic(\"OOM: Array.push append\")");
+                        self.write(") catch @panic(\"OOM: Array.push append\"); ");
                     }
+                    self.write(&format!("break :blk_{} {}.items.len; }}", blk, name));
                 } else {
                     self.emit_module_call("js_array", method, args);
                 }
