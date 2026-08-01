@@ -323,6 +323,7 @@ impl Lowerer {
         let is_array_destructure = second_param
             .map(|p| matches!(p.pattern, BindingPattern::ArrayPattern(_)))
             .unwrap_or(false);
+        let mut saved_destr_var_types: Vec<(String, Option<ZigType>)> = Vec::new();
         let idx_param_raw: Option<String> = if is_array_destructure {
             // Generate synthetic variable name for the destructured element
             let synth_name = self.name_mangler.next_name("__cb_destr");
@@ -349,10 +350,12 @@ impl Lowerer {
                             .iter()
                             .any(|s| Self::ast_stmt_uses_ident(bind_name, s));
                         if is_used {
-                            // Set var_types for the destructured variable
-                            self.type_info
+                            // Save old var_types value for restore after body
+                            let old_ty = self
+                                .type_info
                                 .var_types
                                 .insert(bind_name.to_string(), ZigType::JsAny);
+                            saved_destr_var_types.push((bind_name.to_string(), old_ty));
                             if let Some(ctx) = self.fn_ctx.as_mut() {
                                 ctx.fn_local_types
                                     .insert(bind_name.to_string(), ZigType::JsAny);
@@ -505,6 +508,17 @@ impl Lowerer {
         }
         if let Some(name) = saved_idx_name {
             match saved_idx_var_type {
+                Some(old_ty) => {
+                    self.type_info.var_types.insert(name, old_ty);
+                }
+                None => {
+                    self.type_info.var_types.remove(&name);
+                }
+            }
+        }
+        // Restore var_types for array-destructured callback params (k, v, etc.)
+        for (name, old_type) in saved_destr_var_types {
+            match old_type {
                 Some(old_ty) => {
                     self.type_info.var_types.insert(name, old_ty);
                 }
@@ -977,6 +991,16 @@ impl Lowerer {
                     oxc_ast::ast::AssignmentTarget::AssignmentTargetIdentifier(id) => {
                         id.name.as_str() == ident
                     }
+                    oxc_ast::ast::AssignmentTarget::ComputedMemberExpression(m) => {
+                        Self::ast_expr_uses_ident(ident, &m.object)
+                            || Self::ast_expr_uses_ident(ident, &m.expression)
+                    }
+                    oxc_ast::ast::AssignmentTarget::StaticMemberExpression(m) => {
+                        Self::ast_expr_uses_ident(ident, &m.object)
+                    }
+                    oxc_ast::ast::AssignmentTarget::PrivateFieldExpression(pfe) => {
+                        Self::ast_expr_uses_ident(ident, &pfe.object)
+                    }
                     _ => false,
                 };
                 left_matches || Self::ast_expr_uses_ident(ident, &a.right)
@@ -986,6 +1010,16 @@ impl Lowerer {
                 match &u.argument {
                     oxc_ast::ast::SimpleAssignmentTarget::AssignmentTargetIdentifier(id) => {
                         id.name.as_str() == ident
+                    }
+                    oxc_ast::ast::SimpleAssignmentTarget::ComputedMemberExpression(m) => {
+                        Self::ast_expr_uses_ident(ident, &m.object)
+                            || Self::ast_expr_uses_ident(ident, &m.expression)
+                    }
+                    oxc_ast::ast::SimpleAssignmentTarget::StaticMemberExpression(m) => {
+                        Self::ast_expr_uses_ident(ident, &m.object)
+                    }
+                    oxc_ast::ast::SimpleAssignmentTarget::PrivateFieldExpression(pfe) => {
+                        Self::ast_expr_uses_ident(ident, &pfe.object)
                     }
                     _ => false,
                 }
@@ -1109,9 +1143,18 @@ impl Lowerer {
         // rewriting in regular (non-static) methods.
         let saved_static_block = self.in_static_block;
         self.in_static_block = false;
+        // Save the enclosing function's rest_param_name so nested arrow
+        // functions (which don't bind their own `arguments`) can resolve
+        // `arguments` to the outer function's rest param name.
+        let outer_rest = old.as_ref().and_then(|ctx| {
+            ctx.rest_param_name
+                .clone()
+                .or_else(|| ctx.outer_rest_param_name.clone())
+        });
         let mut new_ctx = FnContext::new(name, is_export, return_type);
         new_ctx.saved_this_rewrite_fields = saved_rewrite;
         new_ctx.saved_in_static_block = saved_static_block;
+        new_ctx.outer_rest_param_name = outer_rest;
         self.fn_ctx = Some(new_ctx);
         old
     }

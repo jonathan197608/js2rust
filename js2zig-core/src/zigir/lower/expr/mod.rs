@@ -326,10 +326,16 @@ impl Lowerer {
         // - Function with explicit rest: the rest param name (e.g., `args`)
         // - Export function (no rest): falls back to `__arguments` VarDecl
         if var_name == "arguments" {
-            if let Some(ctx) = self.fn_ctx.as_ref()
-                && let Some(rest_name) = &ctx.rest_param_name
-            {
-                return IrExpr::Ident(IrIdent::new(rest_name));
+            if let Some(ctx) = self.fn_ctx.as_ref() {
+                // Arrow functions don't bind `arguments`; resolve to the
+                // enclosing function's rest param name via outer_rest_param_name.
+                if let Some(rest_name) = ctx
+                    .rest_param_name
+                    .as_ref()
+                    .or(ctx.outer_rest_param_name.as_ref())
+                {
+                    return IrExpr::Ident(IrIdent::new(rest_name));
+                }
             }
             return IrExpr::Ident(IrIdent::new("__arguments"));
         }

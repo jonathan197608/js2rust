@@ -499,7 +499,9 @@ impl Lowerer {
             Some(ZigType::NamedStruct(ref n)) if n == "Map" || n == "Set" || n == "RegExp"
         ) || matches!(zig_type, Some(ZigType::BigInt))
             || matches!(zig_type, Some(ZigType::ArrayList(_)))
-            || matches!(zig_type, Some(ZigType::Struct(ref f)) if f.is_empty());
+            || matches!(zig_type, Some(ZigType::Struct(ref f)) if f.is_empty())
+            || matches!(zig_type, Some(ZigType::JsError))
+            || matches!(zig_type, Some(ZigType::JsSymbol));
 
         IrDecl::Var(IrVarDecl {
             name: ident,

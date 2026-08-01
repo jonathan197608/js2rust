@@ -90,6 +90,10 @@ pub struct FnContext {
     /// `None` for functions without a rest param (export functions using `arguments`
     /// fall back to `__arguments` VarDecl injection).
     pub rest_param_name: Option<String>,
+    /// The rest_param_name of the enclosing function (if any).
+    /// Arrow functions don't bind their own `arguments`; when they reference
+    /// `arguments`, it should resolve to the enclosing function's rest param.
+    pub outer_rest_param_name: Option<String>,
     /// Identifiers referenced in expressions that were resolved at compile time
     /// (e.g., typeof x → "number" when x's type is known). These references
     /// must be tracked to avoid falsely marking parameters as unused.
@@ -132,6 +136,7 @@ impl FnContext {
             typedarray_vars: HashMap::new(),
             regexp_vars: HashSet::new(),
             rest_param_name: None,
+            outer_rest_param_name: None,
             compile_time_referenced_idents: HashSet::new(),
             saved_this_rewrite_fields: None,
             saved_in_static_block: false,
