@@ -173,8 +173,10 @@ impl Emitter {
                             "({{ break :{} @as(anyerror!void, error.JsThrow); }})",
                             label
                         ));
-                    } else {
+                    } else if self.in_function && self.fn_can_throw {
                         self.write("({ return error.JsThrow; })");
+                    } else {
+                        self.write("(@panic(\"TypeError: Cannot mix BigInt and other types in arithmetic\"))");
                     }
                 }
                 // ── String equality/comparison ──
@@ -390,8 +392,12 @@ impl Emitter {
                             "({{ break :{} @as(anyerror!void, error.JsThrow); }})",
                             label
                         ));
-                    } else {
+                    } else if self.in_function && self.fn_can_throw {
                         self.write("({ return error.JsThrow; })");
+                    } else {
+                        self.write(
+                            "(@panic(\"TypeError: BigInt unsigned right shift is not supported\"))",
+                        );
                     }
                 }
                 // ── Unsigned right shift (non-BigInt) ──
@@ -1346,9 +1352,12 @@ impl Emitter {
             {
                 use crate::zigir::kinds::IndexKind;
                 // JsAnyIndex is read-only (.at()); logical compound assignment
-                // on JsAny arrays falls through to the generic path below.
+                // on JsAny arrays is not supported — emit compile error.
                 if matches!(index_kind, IndexKind::JsAnyIndex) {
-                    // fall through to generic logical compound assignment
+                    self.write(
+                        "({{ @compileError(\"logical compound assignment (&&=, ||=, ??=) on JsAny index is not supported\"); }})",
+                    );
+                    return;
                 } else {
                     let blk = self.next_label();
                     self.write(&format!("({}: {{ ", blk));

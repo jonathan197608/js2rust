@@ -1204,7 +1204,7 @@ impl TypeInferrer {
             ZigType::Str => match method {
                 "indexOf" | "lastIndexOf" | "search" => InferResult::Definite(ZigType::I64),
                 "charCodeAt" => InferResult::Definite(ZigType::F64), // Number (0-65535 or NaN)
-                "codePointAt" => InferResult::Definite(ZigType::JsAny), // Number or undefined
+                "codePointAt" => InferResult::Definite(ZigType::I64), // Number (0-0x10FFFF or 0 for out-of-bounds)
                 "localeCompare" => InferResult::Definite(ZigType::I64),
                 "includes" | "startsWith" | "endsWith" => InferResult::Definite(ZigType::Bool),
                 "trim" | "trimStart" | "trimEnd" | "padStart" | "padEnd" | "charAt" | "at"

@@ -635,7 +635,8 @@ impl Emitter {
                             || self.class_needs_deinit.contains(n.as_str())
                 ) || matches!(&field.zig_type, ZigType::ArrayList(_))
                     || matches!(&field.zig_type, ZigType::BigInt)
-                    || matches!(&field.zig_type, ZigType::JsError);
+                    || matches!(&field.zig_type, ZigType::JsError)
+                    || matches!(&field.zig_type, ZigType::JsSymbol);
                 if needs_field_deinit {
                     self.writeln(&format!("self.{}.deinit(alloc);", zig_ident(&field.name)));
                 }
@@ -665,7 +666,9 @@ impl Emitter {
                     if n == "Map" || n == "Set" || n == "RegExp"
                         || self.class_needs_deinit.contains(n.as_str())
             ) || matches!(field_ty, ZigType::ArrayList(_))
-                || matches!(field_ty, ZigType::BigInt);
+                || matches!(field_ty, ZigType::BigInt)
+                || matches!(field_ty, ZigType::JsError)
+                || matches!(field_ty, ZigType::JsSymbol);
             if needs_static_deinit {
                 self.static_deinit_buffer.push_str(&format!(
                     "    {}.deinit(js_allocator.allocator());\n",

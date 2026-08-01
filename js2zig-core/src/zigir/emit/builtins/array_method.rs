@@ -157,8 +157,8 @@ impl Emitter {
             self.write(&format!("const {}: isize = @intCast(", _from));
             self.emit_i64_coerced(&data.args[1]);
             self.write(&format!(
-                "); const {} = {}.items.len; const {}: usize = @intCast(if ({} < 0) @max(0, @as(isize, @intCast({})) + {}) else @min(@as(usize, @intCast({})), {})); var {}: usize = {}; while ({} < {}) : ({} += 1) {{ if ({}.items[{}] == ",
-                _len, receiver, _start, _from, _len, _from, _from, _len, _i, _start, _i, _len, _i, receiver, _i
+                "); const {} = {}.len; const {}: usize = @intCast(if ({} < 0) @max(0, @as(isize, @intCast({})) + {}) else @min(@as(usize, @intCast({})), {})); var {}: usize = {}; while ({} < {}) : ({} += 1) {{ if ({}[{}] == ",
+                _len, items_access, _start, _from, _len, _from, _from, _len, _i, _start, _i, _len, _i, items_access, _i
             ));
             if let Some(arg) = data.args.first() {
                 self.emit_expr(arg);
@@ -246,8 +246,8 @@ impl Emitter {
             self.write(&format!("const {}: isize = @intCast(", _from));
             self.emit_i64_coerced(&data.args[1]);
             self.write(&format!(
-                "); const {} = {}.items.len; const {}: usize = @intCast(if ({} < 0) @max(0, @as(isize, @intCast({})) + {}) else @min(@as(usize, @intCast({})), {})); var {}: usize = {}; while ({} < {}) : ({} += 1) {{ if ({}.items[{}] == ",
-                _len, receiver, _start, _from, _len, _from, _from, _len, _i, _start, _i, _len, _i, receiver, _i
+                "); const {} = {}.len; const {}: usize = @intCast(if ({} < 0) @max(0, @as(isize, @intCast({})) + {}) else @min(@as(usize, @intCast({})), {})); var {}: usize = {}; while ({} < {}) : ({} += 1) {{ if ({}[{}] == ",
+                _len, items_access, _start, _from, _len, _from, _from, _len, _i, _start, _i, _len, _i, items_access, _i
             ));
             if let Some(arg) = data.args.first() {
                 self.emit_expr(arg);
@@ -365,8 +365,8 @@ impl Emitter {
         self.writeln(&format!(") catch break :{} \"\";", blk));
         if matches!(data.elem_type, ZigType::F64) {
             self.writeln(&format!(
-                "{}.appendSlice(js_allocator.allocator(), js_number.toString(js_allocator.allocator(), {}, 10) catch break :{} \"\") catch break :{} \"\";",
-                _jb, _je, blk, blk
+                "{{ const _js_{blk} = js_number.toString(js_allocator.allocator(), {je}, 10) catch break :{blk} \"\"; {jb}.appendSlice(js_allocator.allocator(), _js_{blk}) catch {{ js_allocator.allocator().free(_js_{blk}); break :{blk} \"\"; }}; js_allocator.allocator().free(_js_{blk}); }}",
+                blk = blk, je = _je, jb = _jb
             ));
         } else if matches!(data.elem_type, ZigType::Str) {
             self.writeln(&format!(
@@ -425,8 +425,8 @@ impl Emitter {
                 self.write(&format!("const {}: isize = @intCast(", _ss));
                 self.emit_i64_coerced(&data.args[0]);
                 self.write(&format!(
-                    "); const {} = {}.items.len; const {}: usize = @intCast(if ({} < 0) @max(0, @as(isize, @intCast({})) + {}) else @min(@as(usize, @intCast({})), {})); ",
-                    _ln, receiver, _s, _ss, _ln, _ss, _ss, _ln
+                    "); const {} = {}.len; const {}: usize = @intCast(if ({} < 0) @max(0, @as(isize, @intCast({})) + {}) else @min(@as(usize, @intCast({})), {})); ",
+                    _ln, items_access, _s, _ss, _ln, _ss, _ss, _ln
                 ));
                 self.write(&format!(
                     "{}.appendSlice(js_allocator.allocator(), {}[{}..]) catch @panic(\"OOM: Array.slice appendSlice\"); ",
@@ -440,8 +440,8 @@ impl Emitter {
                 self.write(&format!("); const {}: isize = @intCast(", _se));
                 self.emit_i64_coerced(&data.args[1]);
                 self.write(&format!(
-                    "); const {} = {}.items.len; const {}: usize = @intCast(if ({} < 0) @max(0, @as(isize, @intCast({})) + {}) else @min(@as(usize, @intCast({})), {})); const {}: usize = @intCast(if ({} < 0) @max(0, @as(isize, @intCast({})) + {}) else @min(@as(usize, @intCast({})), {})); ",
-                    _ln, receiver, _s, _ss, _ln, _ss, _ss, _ln, _e, _se, _ln, _se, _se, _ln
+                    "); const {} = {}.len; const {}: usize = @intCast(if ({} < 0) @max(0, @as(isize, @intCast({})) + {}) else @min(@as(usize, @intCast({})), {})); const {}: usize = @intCast(if ({} < 0) @max(0, @as(isize, @intCast({})) + {}) else @min(@as(usize, @intCast({})), {})); ",
+                    _ln, items_access, _s, _ss, _ln, _ss, _ss, _ln, _e, _se, _ln, _se, _se, _ln
                 ));
                 // Clamp end to start: when end < start, slice returns empty array (JS spec).
                 self.write(&format!(

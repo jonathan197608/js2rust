@@ -437,7 +437,9 @@ impl Emitter {
                 self.indent_push();
                 self.emit_block_stmts_unlabeled(body);
                 // Suppress unused-variable error when loop variable is not referenced in body
-                self.writeln(&format!("_ = &{};", var.zig_name));
+                if !Self::block_always_exits(body) {
+                    self.writeln(&format!("_ = &{};", var.zig_name));
+                }
                 self.indent_pop();
                 self.writeln("}");
             }
