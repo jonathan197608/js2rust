@@ -281,6 +281,7 @@ pub fn JsCollection(comptime Value: type) type {
                 // Set: [value, value]
                 for (self.insertion_order.items) |key| {
                     var pair: std.ArrayList(JsAny) = .empty;
+                    errdefer pair.deinit(alloc);
                     try pair.append(alloc, key);
                     try pair.append(alloc, key); // [value, value]
                     try result.append(alloc, pair);
@@ -290,6 +291,7 @@ pub fn JsCollection(comptime Value: type) type {
                 for (self.insertion_order.items) |key| {
                     if (self.inner.get(key)) |val| {
                         var pair: std.ArrayList(JsAny) = .empty;
+                        errdefer pair.deinit(alloc);
                         try pair.append(alloc, key);
                         try pair.append(alloc, val);
                         try result.append(alloc, pair);

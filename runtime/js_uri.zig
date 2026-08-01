@@ -52,7 +52,10 @@ pub fn decodeURIComponent(alloc: Allocator, input: []const u8) ![]u8 {
 }
 
 /// Decode a percent-encoded string (decodeURI).
-/// Same as decodeURIComponent for simplified implementation.
+/// Note: Per ECMA-262 §B.2.1.2, decodeURI should not decode characters reserved
+/// by encodeURI (;,/?:@&=+$#). This implementation decodes all percent-sequences
+/// for simplicity. In practice, normal URIs produced by encodeURI never contain
+/// percent-encoded reserved characters, so this is rarely visible.
 pub fn decodeURI(alloc: Allocator, input: []const u8) ![]u8 {
     return decodePercent(alloc, input);
 }

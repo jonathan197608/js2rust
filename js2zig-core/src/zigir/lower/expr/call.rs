@@ -986,7 +986,7 @@ impl Lowerer {
             NewConstructor::Set => ZigType::NamedStruct("Set".to_string()),
             NewConstructor::Date(_) => ZigType::NamedStruct("Date".to_string()),
             NewConstructor::RegExp => ZigType::NamedStruct("RegExp".to_string()),
-            NewConstructor::TypedArray(_) => ZigType::NamedStruct("TypedArray".to_string()),
+            NewConstructor::TypedArray(kind) => ZigType::NamedStruct(kind.type_name().to_string()),
             NewConstructor::Class(name) => ZigType::NamedStruct(name.clone()),
             NewConstructor::Error(_) => ZigType::JsAny,
             _ => ZigType::JsAny,

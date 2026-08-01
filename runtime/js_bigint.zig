@@ -355,8 +355,13 @@ pub fn asUintN(bits: u64, value: *const JsBigInt, alloc: std.mem.Allocator) !JsB
     // acceptable. Previous cap of 1M caused negative values with bits > 1M
     // to return a clone (negative) instead of the correct positive result.
     if (bits > 100_000_000) {
-        // 2^bits would require >12.5MB. Return clone as a practical
-        // approximation for astronomically large bits values.
+        // 2^bits would require >12.5MB. For positive values, clone is correct
+        // (value is already in [0, 2^bits)). For negative values, the correct
+        // result would be 2^bits - |value|, but computing 2^bits is infeasible.
+        // Return RangeError to signal unsupported operation for negative values.
+        if (!value.value.isPositive() and !value.value.eqlZero()) {
+            return error.RangeError;
+        }
         return value.clone(alloc);
     }
     // Compute 2^bits as the modulus

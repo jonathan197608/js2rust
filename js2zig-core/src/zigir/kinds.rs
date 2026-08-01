@@ -151,6 +151,26 @@ pub enum TypedArrayKind {
     BigUint64Array,
 }
 
+impl TypedArrayKind {
+    /// Returns the concrete type name (e.g., "Int8Array") for use as
+    /// a `NamedStruct` identifier.
+    pub fn type_name(self) -> &'static str {
+        match self {
+            TypedArrayKind::Int8Array => "Int8Array",
+            TypedArrayKind::Uint8Array => "Uint8Array",
+            TypedArrayKind::Uint8ClampedArray => "Uint8ClampedArray",
+            TypedArrayKind::Int16Array => "Int16Array",
+            TypedArrayKind::Uint16Array => "Uint16Array",
+            TypedArrayKind::Int32Array => "Int32Array",
+            TypedArrayKind::Uint32Array => "Uint32Array",
+            TypedArrayKind::Float32Array => "Float32Array",
+            TypedArrayKind::Float64Array => "Float64Array",
+            TypedArrayKind::BigInt64Array => "BigInt64Array",
+            TypedArrayKind::BigUint64Array => "BigUint64Array",
+        }
+    }
+}
+
 #[cfg(test)]
 mod tests {
     use super::*;

@@ -722,7 +722,10 @@ pub fn trimEnd(s: []const u8) []const u8 {
 /// `from_index >= len`).
 pub fn lastIndexOf(haystack: []const u8, needle: []const u8, from_index: i64) i64 {
     const hay_len: i64 = std.math.cast(i64, utf16Len(haystack)) orelse std.math.maxInt(i64);
-    const start: i64 = if (from_index < 0) 0 else @min(from_index, hay_len);
+    const start: i64 = if (from_index < 0)
+        @max(0, hay_len + from_index)
+    else
+        @min(from_index, hay_len);
     if (start < 0) return -1;
     if (needle.len == 0) return start;
     if (needle.len > haystack.len) return -1;
@@ -1142,10 +1145,11 @@ test "lastIndexOf from_index (R8-P1-19)" {
     try std.testing.expectEqual(@as(i64, 6), lastIndexOf("hello hello", "hello", 10));
     // from_index=5 should find the first "hello" at 0 (second one starts at 6)
     try std.testing.expectEqual(@as(i64, 0), lastIndexOf("hello hello", "hello", 5));
-    // Negative from_index: clamped to 0 per ECMA-262
-    // len=11, from_index=-1 → start=0, finds "hello" at index 0
-    try std.testing.expectEqual(@as(i64, 0), lastIndexOf("hello hello", "hello", -1));
-    // from_index very negative → start=0, finds "hello" at index 0
+    // Negative from_index: per ECMA-262, start = max(len + from_index, 0)
+    // len=11, from_index=-1 → start=max(11-1,0)=10, scan backward from 10
+    //   finds "hello" at index 6
+    try std.testing.expectEqual(@as(i64, 6), lastIndexOf("hello hello", "hello", -1));
+    // from_index very negative → start=max(0, 11-100)=0, finds "hello" at index 0
     try std.testing.expectEqual(@as(i64, 0), lastIndexOf("hello hello", "hello", -100));
     // Empty needle returns start (clamped)
     try std.testing.expectEqual(@as(i64, 0), lastIndexOf("abc", "", 0));

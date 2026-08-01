@@ -98,6 +98,7 @@ pub fn parse_jsdoc(comment: &str) -> ParsedJSDoc {
                     .split_whitespace()
                     .next()
                     .unwrap_or("")
+                    .trim_matches(|c| c == '[' || c == ']')
                     .to_string();
                 if !param_name.is_empty() {
                     result.param_types.push((param_name, ty));
@@ -411,6 +412,12 @@ fn parse_property(s: &str) -> TypedefField {
 /// "User[]"  → "[]const User"  (自定义类型的数组)
 pub fn jsdoc_type_to_zig(jsdoc_ty: &str, typedefs: &HashMap<String, TypedefDef>) -> String {
     let trimmed = jsdoc_ty.trim();
+
+    // Handle union types (e.g. "string | number") — return JsAny
+    // since the runtime uses JsAny for mixed-type values.
+    if trimmed.contains('|') {
+        return "jsany".to_string();
+    }
 
     // 处理数组类型（以 [] 结尾）
     if let Some(stripped) = trimmed.strip_suffix("[]") {
