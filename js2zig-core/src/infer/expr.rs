@@ -803,6 +803,15 @@ impl TypeInferrer {
         {
             return InferResult::Indeterminate;
         }
+        // R39-INF-3: Array holes (Elision) are replaced with JsAny by the
+        // lowerer, so the inferred type must account for them.
+        if ae
+            .elements
+            .iter()
+            .any(|e| matches!(e, ArrayExpressionElement::Elision(_)))
+        {
+            return InferResult::Definite(ZigType::ArrayList(Box::new(ZigType::JsAny)));
+        }
         let first = match ae.elements.first() {
             Some(e) => e,
             None => return InferResult::Indeterminate,
@@ -819,7 +828,11 @@ impl TypeInferrer {
             if let Some(e) = elem.as_expression() {
                 match self.infer_expr_type(e) {
                     InferResult::Definite(t) if t == elem_ty => {}
-                    _ => return InferResult::Indeterminate,
+                    // R39-INF-6: Mixed-type arrays should degrade to
+                    // ArrayList(JsAny) instead of Indeterminate (Rule 8 error).
+                    _ => {
+                        return InferResult::Definite(ZigType::ArrayList(Box::new(ZigType::JsAny)));
+                    }
                 }
             }
         }

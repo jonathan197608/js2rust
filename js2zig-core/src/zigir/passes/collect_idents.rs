@@ -71,7 +71,7 @@ pub fn collect_expr_idents(expr: &IrExpr, names: &mut HashSet<String>) {
         // walk.rs only visits .args, so we must extract it here.
         IrExpr::New(n) => {
             if let NewConstructor::Class(name) = &n.constructor {
-                // P2-11: name is the JS class name — convert to zig_name
+                // P2-11: name is the JS class name 鈥?convert to zig_name
                 // so it matches the zig_name used in IrExpr::Ident references.
                 names.insert(crate::zigir::ident::zig_safe_name(name));
             }
@@ -80,11 +80,25 @@ pub fn collect_expr_idents(expr: &IrExpr, names: &mut HashSet<String>) {
         // array variable name as obj_name (a String, not a child IrExpr).
         // walk::for_each_expr_child visits obj_expr but NOT obj_name, so the
         // catch-all _ => {} would miss it, causing false unused-decl removal.
+        // R39-PAS-3: obj_name stores the JS name 鈥?convert to zig_safe_name
+        // so it matches the zig_name used in IrExpr::Ident references.
         IrExpr::ArrayCallbackInline(inline_data) => {
-            names.insert(inline_data.obj_name.clone());
+            names.insert(crate::zigir::ident::zig_safe_name(&inline_data.obj_name));
         }
         IrExpr::ArrayMethodInline(inline_data) => {
-            names.insert(inline_data.obj_name.clone());
+            names.insert(crate::zigir::ident::zig_safe_name(&inline_data.obj_name));
+        }
+        // R39-PAS-2: IrBuiltinCall stores obj_name (JS name) as a plain
+        // String, not as a child IrExpr. walk.rs only visits obj_expr,
+        // so we must collect obj_name here to prevent false unused-decl.
+        IrExpr::BuiltinCall(bc) => {
+            if let Some(name) = &bc.obj_name {
+                // obj_name may be a string literal like "\"hello\"" 鈥?only
+                // collect if it looks like an identifier (not quoted).
+                if !name.starts_with('"') {
+                    names.insert(crate::zigir::ident::zig_safe_name(name));
+                }
+            }
         }
         _ => {}
     }
@@ -119,7 +133,7 @@ mod tests {
     /// Bug #3: `collect_stmt_idents` for `NestedFnDecl` inserted the
     /// **js_name** of each captured variable instead of the **zig_name**.
     /// When a JS identifier collides with a Zig reserved keyword
-    /// (e.g. `comptime` → zig_name `_comptime`), the mismatch caused
+    /// (e.g. `comptime` 鈫?zig_name `_comptime`), the mismatch caused
     /// `dead_code` to check `zig_name` against a set containing `js_name`
     /// and potentially remove a referenced top-level const.
     #[test]

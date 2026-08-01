@@ -448,7 +448,14 @@ fn stmt_has_side_effects(stmt: &IrStmt) -> bool {
         // preceding statements that the error is meant to flag).
         IrStmt::CompileError { .. } => true,
         IrStmt::Comment(_) => false,
-        IrStmt::DestructureDecl(data) => expr_has_side_effects(&data.init),
+        IrStmt::DestructureDecl(data) => {
+            // R39-PAS-5: Check binding default values for side effects.
+            expr_has_side_effects(&data.init)
+                || data
+                    .bindings
+                    .iter()
+                    .any(|b| b.default.as_ref().is_some_and(expr_has_side_effects))
+        }
         IrStmt::NestedFnDecl { .. } => true,
     }
 }
@@ -519,8 +526,8 @@ fn eliminate_unreachable_in_stmt(stmt: &mut IrStmt) -> bool {
         }
         IrStmt::ForIn { body, .. } => DeadCodeElimPass::eliminate_unreachable_in_block(body),
         IrStmt::ForOf { body, .. } => DeadCodeElimPass::eliminate_unreachable_in_block(body),
-        IrStmt::Switch { cases, .. } => {
-            let mut changed = false;
+        IrStmt::Switch { expr, cases, .. } => {
+            let mut changed = eliminate_unreachable_in_expr(expr);
             for case in cases {
                 // Cases use Vec<IrStmt>, not IrBlock — apply all three phases
                 if convert_vardecl_compile_error(&mut case.body) {

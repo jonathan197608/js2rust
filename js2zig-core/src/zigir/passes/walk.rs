@@ -43,6 +43,12 @@ pub fn for_each_decl_child(
             for block in &c.static_blocks {
                 on_block(block);
             }
+            // R39-PAS-1: Visit class field default value expressions.
+            for f in &c.fields {
+                if let Some(e) = &f.default {
+                    on_expr(e);
+                }
+            }
         }
         IrDecl::CompileError { .. } => {}
     }
@@ -372,6 +378,12 @@ pub fn for_each_decl_child_mut(
             }
             for block in &mut c.static_blocks {
                 on_block(block);
+            }
+            // R39-PAS-1: Visit class field default value expressions.
+            for f in &mut c.fields {
+                if let Some(e) = &mut f.default {
+                    on_expr(e);
+                }
             }
         }
         IrDecl::CompileError { .. } => {}

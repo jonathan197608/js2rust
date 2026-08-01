@@ -522,6 +522,8 @@ impl Lowerer {
         // For MapPut/Destructure targets, expand to Assign + Binary
         // (like BigInt path) because the emitter's Update branch calls
         // emit_assign_target_inner which panics on MapPut targets.
+        // R39-LEX-1: Use actual target_type instead of hardcoded I64.
+        let elem_ty = target_type.unwrap_or(ZigType::I64);
         let target = self.lower_simple_assign_target(&ue.argument);
         // R38: In statement context (e.g. for-loop update `i++`), don't
         // expand to BlockExpr — use standard Update IR which emits `i += 1`.
@@ -569,7 +571,7 @@ impl Lowerer {
                         op: bin_op,
                         left: Box::new(read_expr),
                         right: Box::new(IrExpr::IntLiteral(1)),
-                        left_type: Some(ZigType::I64),
+                        left_type: Some(elem_ty.clone()),
                         right_type: Some(ZigType::I64),
                     }),
                     is_json_parse: false,
@@ -609,7 +611,7 @@ impl Lowerer {
                     op: bin_op,
                     left: Box::new(temp_ident.clone()),
                     right: Box::new(IrExpr::IntLiteral(1)),
-                    left_type: Some(ZigType::I64),
+                    left_type: Some(elem_ty.clone()),
                     right_type: Some(ZigType::I64),
                 }),
             });
@@ -1103,9 +1105,9 @@ impl Lowerer {
 
             let mut decls = vec![var_decl];
             if let Some(idx) = index_bind {
-                // Place index binding before object binding so both temps
-                // are available in the result block.
-                decls.insert(0, idx);
+                // R39-LEX-2: Place index binding AFTER object binding to
+                // preserve JS evaluation order: object first, then index.
+                decls.push(idx);
             }
             return (Some((decls, blk_label)), new_target, read);
         }

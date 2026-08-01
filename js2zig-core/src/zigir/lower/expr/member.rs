@@ -1148,6 +1148,14 @@ impl Lowerer {
             SimpleAssignmentTarget::StaticMemberExpression(mem) => {
                 self.infer_static_member_type(mem)
             }
+            // R39-LEX-5: Handle ComputedMember and PrivateField so that
+            // arr[i]++ on BigInt arrays correctly detects BigInt type.
+            SimpleAssignmentTarget::ComputedMemberExpression(mem) => {
+                self.infer_computed_member_type(mem)
+            }
+            SimpleAssignmentTarget::PrivateFieldExpression(pfe) => {
+                self.infer_private_field_type(pfe)
+            }
             _ => None,
         }
     }

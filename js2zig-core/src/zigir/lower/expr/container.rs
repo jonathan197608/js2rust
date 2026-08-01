@@ -195,26 +195,45 @@ impl Lowerer {
                     .unwrap_or_else(|| q.value.raw.to_string())
             })
             .collect();
-        let exprs: Vec<crate::zigir::types::IrExpr> =
-            tl.expressions.iter().map(|e| self.lower_expr(e)).collect();
-
         // Determine the Zig format specifier for each interpolation expression.
         // This must match the Emitter's logic:
         //   Str→{s}, I64/F64→{d}, Bool→{}, other→expr_is_string?{s}:{}
-        let format_specs: Vec<String> = tl
-            .expressions
-            .iter()
-            .map(|expr| {
-                if self.expr_is_string(expr) {
-                    "{s}".to_string()
-                } else {
-                    match self.infer_expr_type(expr) {
-                        Some(ty) => helpers::format_specifier_for_type(&ty).to_string(),
-                        None => "{any}".to_string(),
+        // R39-LEX-3: BigInt interpolation must be wrapped in toString() to
+        // avoid the trailing "n" that JsBigInt.format() appends.
+        let mut exprs: Vec<crate::zigir::types::IrExpr> = Vec::with_capacity(tl.expressions.len());
+        let mut format_specs: Vec<String> = Vec::with_capacity(tl.expressions.len());
+        for expr in tl.expressions.iter() {
+            let lowered = self.lower_expr(expr);
+            if self.expr_is_string(expr) {
+                format_specs.push("{s}".to_string());
+                exprs.push(lowered);
+            } else {
+                match self.infer_expr_type(expr) {
+                    Some(ZigType::BigInt) => {
+                        // Wrap BigInt in toString() to avoid trailing "n"
+                        exprs.push(crate::zigir::types::IrExpr::BuiltinCall(
+                            crate::zigir::types::IrBuiltinCall::simple(
+                                BuiltinModule::JsBigInt,
+                                "toString",
+                                None,
+                                Some(Box::new(lowered)),
+                                vec![],
+                                ZigType::Str,
+                            ),
+                        ));
+                        format_specs.push("{s}".to_string());
+                    }
+                    Some(ty) => {
+                        format_specs.push(helpers::format_specifier_for_type(&ty).to_string());
+                        exprs.push(lowered);
+                    }
+                    None => {
+                        format_specs.push("{any}".to_string());
+                        exprs.push(lowered);
                     }
                 }
-            })
-            .collect();
+            }
+        }
 
         crate::zigir::types::IrExpr::TemplateLiteral {
             parts,

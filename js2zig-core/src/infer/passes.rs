@@ -534,10 +534,12 @@ impl TypeInferrer {
                 self.walk_stmt_for_types(&dws.body);
             }
             Statement::ForStatement(fs) => {
-                self.walk_stmt_for_types(&fs.body);
+                // R39-INF-1: Process init BEFORE body so loop variables
+                // are registered in var_types for body to reference.
                 if let Some(ForStatementInit::VariableDeclaration(vd)) = &fs.init {
                     self.collect_var_types_from_decl(vd);
                 }
+                self.walk_stmt_for_types(&fs.body);
             }
             Statement::ForOfStatement(fos) => {
                 self.walk_stmt_for_types(&fos.body);
@@ -708,6 +710,14 @@ impl TypeInferrer {
                         self.var_types.insert(pname.to_string(), ZigType::Anytype);
                         anytype_params.insert(pname.to_string());
                         saved_params.push((pname.to_string(), old));
+                    }
+                }
+
+                // R39-INF-2: Walk method body BEFORE return type inference
+                // so local variables are registered in var_types.
+                if let Some(body) = &md.value.body {
+                    for s in &body.statements {
+                        self.walk_stmt_for_types(s);
                     }
                 }
 
