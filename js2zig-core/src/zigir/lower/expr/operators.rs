@@ -660,7 +660,9 @@ impl Lowerer {
                         left: Box::new(base_expr),
                         right: value,
                         left_type: Some(ZigType::BigInt),
-                        right_type: Some(ZigType::BigInt),
+                        right_type: Some(
+                            self.infer_expr_type(&ae.right).unwrap_or(ZigType::BigInt),
+                        ),
                     }),
                 }
             } else {
@@ -907,7 +909,9 @@ impl Lowerer {
                             left: Box::new(read),
                             right: value,
                             left_type: Some(ZigType::BigInt),
-                            right_type: Some(ZigType::BigInt),
+                            right_type: Some(
+                                self.infer_expr_type(&ae.right).unwrap_or(ZigType::BigInt),
+                            ),
                         }),
                     };
                     return self.wrap_compound_assign(bind, assign, break_value);

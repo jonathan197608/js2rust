@@ -129,30 +129,58 @@ impl TypeInferrer {
             //   - `a || b`: returns a if truthy, else returns b
             //   - `a ?? b`: returns a if not null/undefined, else returns b
             //
-            // If both operands infer to the same type, the result is that type.
-            // If types differ or are indeterminate, the result is JsAny.
+            // For ??, if left is a definite non-nullish type (i64, f64, bool,
+            // Str, BigInt), the result is always left's type — matching the
+            // lowerer's short-circuit (mod.rs: nullish check on raw_left_type).
+            // For && and ||, if both operands infer to the same type, the
+            // result is that type; if types differ, the result is JsAny.
             Expression::LogicalExpression(le) => {
                 let left_ty = self.infer_expr_type(&le.left);
-                let right_ty = self.infer_expr_type(&le.right);
-                match (left_ty, right_ty) {
-                    (InferResult::Definite(l), InferResult::Definite(r)) => {
-                        if l == r {
-                            InferResult::Definite(l)
-                        } else {
-                            InferResult::Definite(ZigType::JsAny)
+                // ?? on non-JsAny types is a no-op: the left value can never
+                // be null/undefined in our type system (i64, f64, bool, Str,
+                // BigInt). Matches lowerer's ?? short-circuit (mod.rs).
+                if le.operator == LogicalOperator::Coalesce {
+                    match &left_ty {
+                        InferResult::Definite(ZigType::JsAny) => {
+                            // left could be nullish → result could be right
+                            let right_ty = self.infer_expr_type(&le.right);
+                            match right_ty {
+                                InferResult::Definite(_) => InferResult::Definite(ZigType::JsAny),
+                                InferResult::Indeterminate => InferResult::Definite(ZigType::JsAny),
+                            }
+                        }
+                        InferResult::Definite(_) => {
+                            // left is non-nullish → result is left's type
+                            left_ty
+                        }
+                        InferResult::Indeterminate => {
+                            // unknown left type → fallback to right or JsAny
+                            self.infer_expr_type(&le.right)
                         }
                     }
-                    // Both operands Indeterminate → Indeterminate so the
-                    // var_types fallback in decl.rs can pick up JSDoc @type
-                    // annotations (Bug A pattern). Matches lowerer's
-                    // (None, None) => None mapping (member.rs:649). Mixed
-                    // Definite/Indeterminate returns Definite(JsAny), matching
-                    // the lowerer's (Some(_), None) | (None, Some(_)) => JsAny.
-                    // (R24-INF-4)
-                    (InferResult::Indeterminate, InferResult::Indeterminate) => {
-                        InferResult::Indeterminate
+                } else {
+                    // && or ||
+                    let right_ty = self.infer_expr_type(&le.right);
+                    match (left_ty, right_ty) {
+                        (InferResult::Definite(l), InferResult::Definite(r)) => {
+                            if l == r {
+                                InferResult::Definite(l)
+                            } else {
+                                InferResult::Definite(ZigType::JsAny)
+                            }
+                        }
+                        // Both operands Indeterminate → Indeterminate so the
+                        // var_types fallback in decl.rs can pick up JSDoc @type
+                        // annotations (Bug A pattern). Matches lowerer's
+                        // (None, None) => None mapping (member.rs:649). Mixed
+                        // Definite/Indeterminate returns Definite(JsAny), matching
+                        // the lowerer's (Some(_), None) | (None, Some(_)) => JsAny.
+                        // (R24-INF-4)
+                        (InferResult::Indeterminate, InferResult::Indeterminate) => {
+                            InferResult::Indeterminate
+                        }
+                        _ => InferResult::Definite(ZigType::JsAny),
                     }
-                    _ => InferResult::Definite(ZigType::JsAny),
                 }
             }
 
@@ -693,11 +721,35 @@ impl TypeInferrer {
             Expression::ConditionalExpression(ce) => {
                 self.expr_is_string(&ce.consequent) && self.expr_is_string(&ce.alternate)
             }
-            // LogicalExpression (||, &&, ??): result is string if either branch is string.
-            // All logical operators return one of their operands, so if either side
-            // is a string, the result could be a string.
+            // LogicalExpression (||, &&, ??): result is string if either branch
+            // is string — but ?? only returns right when left is null/undefined.
+            // So for ??, if left is a definite non-nullish type that is NOT
+            // string, the result is NOT string (matching lowerer's short-circuit).
             Expression::LogicalExpression(le) => {
-                self.expr_is_string(&le.left) || self.expr_is_string(&le.right)
+                if le.operator == LogicalOperator::Coalesce {
+                    // ?? returns left if not nullish; only string if left is
+                    // string or left is nullish and right is string.
+                    let left_is_string = self.expr_is_string(&le.left);
+                    if left_is_string {
+                        return true;
+                    }
+                    // In our type system, only JsAny can be null/undefined.
+                    // Check if left is a JsAny identifier — if so, result could
+                    // be right; otherwise left is non-nullish and not string.
+                    if let Expression::Identifier(id) = &le.left
+                        && self.var_types.get(id.name.as_str()) == Some(&ZigType::JsAny)
+                    {
+                        return self.expr_is_string(&le.right);
+                    }
+                    // For non-identifier left (or non-JsAny identifier),
+                    // we can't determine nullish-ness without infer_expr_type.
+                    // Fall back to checking right (conservative — may over-report
+                    // string, but never under-reports).
+                    self.expr_is_string(&le.right)
+                } else {
+                    // || or &&: result is string if either branch is string
+                    self.expr_is_string(&le.left) || self.expr_is_string(&le.right)
+                }
             }
             // INF-4: AwaitExpression — unwrap and check inner expression
             Expression::AwaitExpression(ae) => self.expr_is_string(&ae.argument),

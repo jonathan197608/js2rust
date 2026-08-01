@@ -542,9 +542,8 @@ impl TypeInferrer {
                 self.walk_stmt_for_types(&fs.body);
             }
             Statement::ForOfStatement(fos) => {
-                self.walk_stmt_for_types(&fos.body);
-                // For-of loop variables have no initializer in the AST;
-                // infer their type from the iterable expression.
+                // R41-INF: Process loop variable BEFORE body so it is registered
+                // in var_types for body to reference (mirrors R39 ForStatement fix).
                 if let ForStatementLeft::VariableDeclaration(vd) = &fos.left {
                     // Try to get element type from the iterable
                     let elem_ty = match self.infer_expr_type(&fos.right) {
@@ -558,9 +557,10 @@ impl TypeInferrer {
                         }
                     }
                 }
+                self.walk_stmt_for_types(&fos.body);
             }
             Statement::ForInStatement(fis) => {
-                self.walk_stmt_for_types(&fis.body);
+                // R41-INF: Register loop variable BEFORE body (mirrors R39 fix).
                 // for-in loop variable is always a string (object property name).
                 if let ForStatementLeft::VariableDeclaration(vd) = &fis.left {
                     for decl in &vd.declarations {
@@ -569,6 +569,7 @@ impl TypeInferrer {
                         }
                     }
                 }
+                self.walk_stmt_for_types(&fis.body);
             }
             Statement::TryStatement(ts) => {
                 for s in &ts.block.body {

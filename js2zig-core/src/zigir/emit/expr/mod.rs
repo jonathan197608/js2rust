@@ -1351,7 +1351,7 @@ impl Emitter {
                     // fall through to generic logical compound assignment
                 } else {
                     let blk = self.next_label();
-                    self.write("{ ");
+                    self.write(&format!("({}: {{ ", blk));
                     // For simple Ident objects, use the original variable directly
                     // (no temp copy -- ArrayList copies break length tracking).
                     let obj_var = match &**object {
@@ -1430,7 +1430,11 @@ impl Emitter {
                     } else {
                         self.emit_expr(value);
                     }
-                    self.write(&format!(" else {a}; }}", a = access));
+                    self.write(&format!(
+                        " else {a}; break :{blk} {a}; }})",
+                        a = access,
+                        blk = blk
+                    ));
                     return;
                 } // end else (non-JsAnyIndex)
             }
@@ -1507,7 +1511,7 @@ impl Emitter {
                     },
                     _ => "JsAny.fromUndefined()",
                 };
-                self.write(&format!("{{ const _ga_raw_{} = ", blk));
+                self.write(&format!("({}: {{ const _ga_raw_{} = ", blk, blk));
                 self.emit_expr(index);
                 self.write(&format!(
                     "; const _ga_idx_{}: usize = if (_ga_raw_{} < 0) @panic(\"index out of bounds: negative array index\") else @as(usize, @intCast(_ga_raw_{})); ",
@@ -1529,7 +1533,10 @@ impl Emitter {
                     ));
                     self.emit_expr(value);
                 }
-                self.write("; }");
+                self.write(&format!(
+                    "; break :{} {}.items[_ga_idx_{}]; }})",
+                    blk, arr_name, blk
+                ));
                 return;
             }
             // Fallback: direct assignment
