@@ -336,15 +336,38 @@ impl Emitter {
                 let _new = format!("_grp_new_{}", blk);
                 self.write(&format!("{blk}: {{ var {0} = js_runtime.StringArrayHashMap(std.ArrayList(JsAny)).init(js_allocator.allocator()); errdefer {{ var {1} = {0}.iterator(); while ({1}.next()) |{2}| {{ {2}.value_ptr.deinit(js_allocator.allocator()); }} {0}.deinit(); }} ", _map, _di, _e));
                 if let Some(items_arg) = args.first() {
+                    // BUG-2 fix: determine if items_arg is a rest-param slice
+                    // (no .items needed for iteration).
+                    let is_rest_slice = match items_arg {
+                        IrExpr::Ident(ident) if self.rest_param_names.contains(&ident.zig_name) => {
+                            true
+                        }
+                        IrExpr::TypedIdent { ident, .. }
+                            if self.rest_param_names.contains(&ident.zig_name) =>
+                        {
+                            true
+                        }
+                        _ => false,
+                    };
+                    let items_suffix = if is_rest_slice { "" } else { ".items" };
                     self.write("for (");
                     self.emit_expr(items_arg);
-                    self.write(&format!(".items) |{0}| {{ ", _item));
+                    self.write(&format!("{}) |{1}| {{ ", items_suffix, _item));
                     if args.len() >= 2 {
                         self.emit_group_by_callback(&args[1], &_item, &_key);
                     } else {
                         self.write(&format!("const {0} = {1}", _key, _item));
                     }
-                    self.write(&format!("; if ({0}.getPtr({1})) |_grp_list| {{ _grp_list.append(js_allocator.allocator(), JsAny.from({2})) catch @panic(\"OOM\"); }} else {{ var {3}: std.ArrayList(JsAny) = .empty; {3}.append(js_allocator.allocator(), JsAny.from({2})) catch @panic(\"OOM\"); {0}.put({1}, {3}) catch @panic(\"OOM\"); }} }} ", _map, _key, _item, _new));
+                    // BUG-2 fix: convert _key to []const u8 for StringArrayHashMap.
+                    // The callback may return i64, f64, bool, etc. — JsAny.from(key).asString(alloc)
+                    // converts any value to its string representation, matching JS semantics
+                    // where Object.groupBy coerces keys to strings.
+                    let _key_str = format!("{}_str", _key);
+                    self.write(&format!(
+                        "; const {0} = JsAny.from({1}).asString(js_allocator.allocator()); ",
+                        _key_str, _key
+                    ));
+                    self.write(&format!("if ({0}.getPtr({1})) |_grp_list| {{ _grp_list.append(js_allocator.allocator(), JsAny.from({2})) catch @panic(\"OOM\"); }} else {{ var {3}: std.ArrayList(JsAny) = .empty; {3}.append(js_allocator.allocator(), JsAny.from({2})) catch @panic(\"OOM\"); {0}.put({1}, {3}) catch @panic(\"OOM\"); }} }} ", _map, _key_str, _item, _new));
                 }
                 self.write(&format!("break :{blk} {}; }}", _map));
             }

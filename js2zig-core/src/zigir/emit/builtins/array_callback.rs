@@ -69,10 +69,11 @@ impl Emitter {
 
         match data.collection_kind {
             CollectionKind::Array => {
+                let items = self.items_path(&receiver).to_string();
                 self.emit_for_each_simple_loop(
                     &binding,
                     &receiver,
-                    ".items",
+                    &items,
                     &data.elem_param,
                     data.has_idx_param,
                     &data.idx_param,
@@ -212,13 +213,17 @@ impl Emitter {
         let (receiver, binding) = self.resolve_receiver(&data.obj_expr, &data.obj_name);
 
         let blk = self.begin_labeled_block(&binding);
+        let items = self.items_path(&receiver);
         if data.has_idx_param {
             self.write(&format!(
-                "for ({}.items, 0..) |{}, {}| ",
-                receiver, data.elem_param, data.idx_param
+                "for ({}{}, 0..) |{}, {}| ",
+                receiver, items, data.elem_param, data.idx_param
             ));
         } else {
-            self.write(&format!("for ({}.items) |{}| ", receiver, data.elem_param));
+            self.write(&format!(
+                "for ({}{}) |{}| ",
+                receiver, items, data.elem_param
+            ));
         }
         self.write("{\n");
         self.indent_push();
@@ -267,7 +272,12 @@ impl Emitter {
             "var {}: std.ArrayList({}) = .empty; ",
             var, elem_type_str
         ));
-        self.write(&format!("for ({}.items) |{}| ", receiver, loop_elem));
+        self.write(&format!(
+            "for ({}{}) |{}| ",
+            receiver,
+            self.items_path(&receiver),
+            loop_elem
+        ));
         self.write("{\n");
         self.indent_push();
         let loop_elem_clone = loop_elem.clone();
@@ -306,7 +316,12 @@ impl Emitter {
             let loop_var_name = format!("_i_{}", blk);
             self.emit_reverse_loop_header(&receiver, &data.elem_param, "", &loop_var_name);
         } else {
-            self.write(&format!("for ({}.items) |{}| ", receiver, data.elem_param));
+            self.write(&format!(
+                "for ({}{}) |{}| ",
+                receiver,
+                self.items_path(&receiver),
+                data.elem_param
+            ));
             self.write("{\n");
         }
         self.indent_push();
@@ -382,8 +397,11 @@ impl Emitter {
         } else {
             let index_name = format!("_li_{}", blk);
             self.write(&format!(
-                "for ({}.items, 0..) |{}, {}| ",
-                receiver, data.elem_param, index_name
+                "for ({}{}, 0..) |{}, {}| ",
+                receiver,
+                self.items_path(&receiver),
+                data.elem_param,
+                index_name
             ));
             self.write("{\n");
             self.writeln(&format!(
@@ -461,15 +479,24 @@ impl Emitter {
         let loop_elem_fallback = format!("_me_{}", blk);
         let elem_type_str = data.elem_type.to_zig_type();
         let loop_elem = Self::resolve_loop_elem(&data.elem_param, &loop_elem_fallback);
+        let items_suffix = self.items_path(&receiver).to_string();
+        let len_expr = if items_suffix.is_empty() {
+            format!("{}.len", receiver)
+        } else {
+            format!("{}{}.len", receiver, items_suffix)
+        };
         self.write(&format!(
             "var {}: std.ArrayList({}) = .empty; ",
             var, elem_type_str
         ));
         self.write(&format!(
-            "{}.ensureTotalCapacity(js_allocator.allocator(), {}.items.len) catch @panic(\"OOM: Array.{} capacity\"); ",
-            var, receiver, method_name
+            "{}.ensureTotalCapacity(js_allocator.allocator(), {}) catch @panic(\"OOM: Array.{} capacity\"); ",
+            var, len_expr, method_name
         ));
-        self.write(&format!("for ({}.items) |{}| ", receiver, loop_elem));
+        self.write(&format!(
+            "for ({}{}) |{}| ",
+            receiver, items_suffix, loop_elem
+        ));
         self.write("{\n");
         self.indent_push();
         let var_clone = var.clone();
@@ -808,11 +835,12 @@ impl Emitter {
             // R33: When binding (chained receiver), emit sort in a labeled block
             // without nesting another labeled block. The pattern:
             //   blk: { const __chain_N = <expr>; std.mem.sort(...); break :blk __chain_N; }
+            let items_target = format!("{}{}", receiver, self.items_path(&receiver));
             let blk = self.next_label();
             self.write(&format!("{}: {{ ", blk));
             self.write(b);
             self.emit_sort_less_than(
-                &format!("{}.items", receiver),
+                &items_target,
                 &elem_type_str,
                 &param_a,
                 &param_b,
@@ -820,10 +848,11 @@ impl Emitter {
             );
             self.write(&format!(" break :{} {}; }}", blk, receiver));
         } else {
+            let items_target = format!("{}{}", receiver, self.items_path(&receiver));
             let blk = self.next_label();
             self.write(&format!("({}: {{ ", blk));
             self.emit_sort_less_than(
-                &format!("{}.items", receiver),
+                &items_target,
                 &elem_type_str,
                 &param_a,
                 &param_b,
@@ -848,13 +877,14 @@ impl Emitter {
         let blk = self.begin_labeled_block(&binding);
         let var = format!("_sorted_{}", blk);
         let items_ref = format!("{}.items", var);
+        let recv_items = format!("{}{}", receiver, self.items_path(&receiver));
         self.write(&format!(
             "var {}: std.ArrayList({}) = .empty; ",
             var, elem_type_str
         ));
         self.write(&format!(
-            "{}.appendSlice(js_allocator.allocator(), {}.items) catch @panic(\"OOM: Array.toSorted appendSlice\"); ",
-            var, receiver
+            "{}.appendSlice(js_allocator.allocator(), {}) catch @panic(\"OOM: Array.toSorted appendSlice\"); ",
+            var, recv_items
         ));
 
         self.emit_sort_less_than(&items_ref, &elem_type_str, &param_a, &param_b, &data.body);
@@ -874,9 +904,20 @@ impl Emitter {
         extra: &str,
         loop_var: &str,
     ) {
+        let items = self.items_path(receiver);
+        let len_expr = if items.is_empty() {
+            format!("{}.len", receiver)
+        } else {
+            format!("{}.items.len", receiver)
+        };
+        let idx_expr = if items.is_empty() {
+            format!("{}[{}]", receiver, loop_var)
+        } else {
+            format!("{}.items[{}]", receiver, loop_var)
+        };
         self.write(&format!(
-            "var {}: usize = {}.items.len; while ({} > 0) {{ {} -= 1; const {} = {}.items[{}]; {}",
-            loop_var, receiver, loop_var, loop_var, elem_param, receiver, loop_var, extra
+            "var {}: usize = {}; while ({} > 0) {{ {} -= 1; const {} = {}; {}",
+            loop_var, len_expr, loop_var, loop_var, elem_param, idx_expr, extra
         ));
     }
 

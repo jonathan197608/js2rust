@@ -445,14 +445,27 @@ pub fn indexOf(haystack: []const u8, needle: []const u8, from_index: i64) i64 {
     return -1;
 }
 
-/// Check if s starts with prefix.
-pub fn startsWith(s: []const u8, prefix: []const u8) bool {
-    return std.mem.startsWith(u8, s, prefix);
+/// Check if s starts with prefix, optionally searching from `position`
+/// (a UTF-16 code unit index, matching JS `String.prototype.startsWith` semantics).
+/// `position` defaults to 0 when JS omits it. Negative values are clamped to 0.
+pub fn startsWith(s: []const u8, prefix: []const u8, position: i64) bool {
+    const len: i64 = std.math.cast(i64, utf16Len(s)) orelse std.math.maxInt(i64);
+    const start: i64 = if (position < 0) 0 else if (position > len) len else position;
+    if (start >= len) return prefix.len == 0;
+    const byte_start = utf16IndexToByteOffset(s, @intCast(start)) orelse s.len;
+    return std.mem.startsWith(u8, s[byte_start..], prefix);
 }
 
-/// Check if s ends with suffix.
-pub fn endsWith(s: []const u8, suffix: []const u8) bool {
-    return std.mem.endsWith(u8, s, suffix);
+/// Check if s ends with suffix, optionally considering only the first `end_position`
+/// characters of s (a UTF-16 code unit index, matching JS `String.prototype.endsWith` semantics).
+/// `end_position` defaults to the string length when JS omits it. If `end_position`
+/// is larger than the string length, it is clamped to the string length.
+pub fn endsWith(s: []const u8, suffix: []const u8, end_position: i64) bool {
+    const len: i64 = std.math.cast(i64, utf16Len(s)) orelse std.math.maxInt(i64);
+    const end: i64 = if (end_position < 0) 0 else if (end_position > len) len else end_position;
+    if (end >= len) return std.mem.endsWith(u8, s, suffix);
+    const byte_end = utf16IndexToByteOffset(s, @intCast(end)) orelse s.len;
+    return std.mem.endsWith(u8, s[0..byte_end], suffix);
 }
 
 /// Extract substring from start (inclusive) to end (exclusive).
@@ -890,13 +903,21 @@ test "indexOf from_index (R8-P1-19)" {
 }
 
 test "startsWith" {
-    try std.testing.expect(startsWith("hello", "hel"));
-    try std.testing.expect(!startsWith("hello", "xyz"));
+    try std.testing.expect(startsWith("hello", "hel", 0));
+    try std.testing.expect(!startsWith("hello", "xyz", 0));
+    // With position parameter (JS semantics)
+    try std.testing.expect(startsWith("hello", "ell", 1));
+    try std.testing.expect(!startsWith("hello", "hel", 1));
+    try std.testing.expect(startsWith("hello", "", 5));
+    try std.testing.expect(!startsWith("hello", "lo", 10));
 }
 
 test "endsWith" {
-    try std.testing.expect(endsWith("hello", "llo"));
-    try std.testing.expect(!endsWith("hello", "hel"));
+    try std.testing.expect(endsWith("hello", "llo", std.math.maxInt(i64)));
+    try std.testing.expect(!endsWith("hello", "hel", std.math.maxInt(i64)));
+    // With endPosition parameter (JS semantics)
+    try std.testing.expect(endsWith("hello", "hel", 3));
+    try std.testing.expect(!endsWith("hello", "llo", 3));
 }
 
 test "slice" {

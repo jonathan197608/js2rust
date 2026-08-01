@@ -861,6 +861,140 @@ return Object.groupBy(items, (item) => item > 1 ? "big" : "small");
     );
 }
 
+// R47-BUG3: Array callback methods on rest params should not use .items
+// rest params are []const JsAny slices, not ArrayList — no .items field
+#[test]
+fn test_r47_rest_param_some() {
+    let js = r#"
+export function test(...args) {
+return args.some(x => x > 0);
+}
+"#;
+    let zig = transpile_and_check(js, "test_r47_rest_param_some");
+    assert!(
+        !zig.contains("args.items"),
+        "rest param should NOT use .items:\n{}",
+        zig
+    );
+    assert!(
+        zig.contains("for (args)"),
+        "Expected 'for (args)' (no .items) in:\n{}",
+        zig
+    );
+}
+
+#[test]
+fn test_r47_rest_param_filter() {
+    let js = r#"
+export function test(...args) {
+return args.filter(x => x > 0);
+}
+"#;
+    let zig = transpile_and_check(js, "test_r47_rest_param_filter");
+    assert!(
+        !zig.contains("args.items"),
+        "rest param filter should NOT use .items:\n{}",
+        zig
+    );
+}
+
+#[test]
+fn test_r47_rest_param_map() {
+    let js = r#"
+export function test(...args) {
+return args.map(x => x * 2);
+}
+"#;
+    let zig = transpile_and_check(js, "test_r47_rest_param_map");
+    assert!(
+        !zig.contains("args.items"),
+        "rest param map should NOT use .items:\n{}",
+        zig
+    );
+}
+
+#[test]
+fn test_r47_rest_param_find() {
+    let js = r#"
+export function test(...args) {
+return args.find(x => x > 0);
+}
+"#;
+    let zig = transpile_and_check(js, "test_r47_rest_param_find");
+    assert!(
+        !zig.contains("args.items"),
+        "rest param find should NOT use .items:\n{}",
+        zig
+    );
+}
+
+#[test]
+fn test_r47_rest_param_foreach() {
+    let js = r#"
+export function test(...args) {
+args.forEach(x => { return x; });
+return 0;
+}
+"#;
+    let zig = transpile_and_check(js, "test_r47_rest_param_foreach");
+    assert!(
+        !zig.contains("args.items"),
+        "rest param forEach should NOT use .items:\n{}",
+        zig
+    );
+}
+
+#[test]
+fn test_r47_rest_param_findindex() {
+    let js = r#"
+export function test(...args) {
+return args.findIndex(x => x > 0);
+}
+"#;
+    let zig = transpile_and_check(js, "test_r47_rest_param_findindex");
+    assert!(
+        !zig.contains("args.items"),
+        "rest param findIndex should NOT use .items:\n{}",
+        zig
+    );
+}
+
+#[test]
+fn test_r47_rest_param_sort() {
+    let js = r#"
+export function test(...args) {
+return args.sort((a, b) => a - b);
+}
+"#;
+    let zig = transpile_and_check(js, "test_r47_rest_param_sort");
+    assert!(
+        !zig.contains("args.items"),
+        "rest param sort should NOT use .items:\n{}",
+        zig
+    );
+}
+
+// R47-BUG2: Object.groupBy with non-string key (e.g., Math.floor returns number)
+#[test]
+fn test_r47_group_by_numeric_key() {
+    let js = r#"
+/**
+ * @returns {JsAny}
+ */
+export function test() {
+const items = [6.1, 4.2, 6.3];
+return Object.groupBy(items, Math.floor);
+}
+"#;
+    let zig = transpile_and_check(js, "test_r47_group_by_numeric_key");
+    // Should contain key-to-string conversion via JsAny.from(...).asString()
+    assert!(
+        zig.contains(".asString("),
+        "Expected .asString() for numeric key conversion in:\n{}",
+        zig
+    );
+}
+
 #[test]
 fn test_date_set_time() {
     // ✅ Date.prototype.setTime(): now supported

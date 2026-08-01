@@ -218,8 +218,19 @@ impl Emitter {
             "trimEnd" => ("trimEnd", false, false, 0, 0, &[], "js_string"),
             // ── No allocator, 1 arg, non-fallible ──
             "includes" => ("includes", false, false, 1, 2, &["0"], "js_string"),
-            "startsWith" => ("startsWith", false, false, 1, 1, &[], "js_string"),
-            "endsWith" => ("endsWith", false, false, 1, 1, &[], "js_string"),
+            // startsWith/endsWith: JS supports optional position/endPosition (2nd arg).
+            // Default position=0 for startsWith, default endPosition=len for endsWith.
+            // We use std.math.maxInt(i64) as an effective infinity — the runtime clamps it to len.
+            "startsWith" => ("startsWith", false, false, 1, 2, &["0"], "js_string"),
+            "endsWith" => (
+                "endsWith",
+                false,
+                false,
+                1,
+                2,
+                &["std.math.maxInt(i64)"],
+                "js_string",
+            ),
             "charCodeAt" => ("charCodeAt", false, false, 1, 1, &[], "js_string"),
             "codePointAt" => ("codePointAt", false, false, 1, 1, &[], "js_string"),
             // ── R8-P1-19: indexOf/lastIndexOf support optional fromIndex ──

@@ -1454,6 +1454,52 @@ return str.endsWith(suffix);
     );
 }
 
+// Test: String.startsWith() with position parameter
+#[test]
+fn test_r47_string_starts_with_position() {
+    let js = r#"
+/**
+ * @returns {boolean}
+ */
+export function checkStartPos() {
+return "hello".startsWith("ell", 1);
+}
+"#;
+    let zig = transpile_and_check(js, "test_r47_starts_with_position");
+    assert!(
+        zig.contains("js_string.startsWith("),
+        "Expected 'js_string.startsWith(' in:\n{}",
+        zig
+    );
+    // Should pass 3 args: receiver, prefix, position
+    assert!(
+        zig.contains(", 1)"),
+        "Expected position arg '1' in:\n{}",
+        zig
+    );
+}
+
+// Test: String.endsWith() with endPosition parameter
+#[test]
+fn test_r47_string_ends_with_position() {
+    let js = r#"
+/**
+ * @param {string} str
+ * @param {string} suffix
+ * @returns {boolean}
+ */
+export function checkEndPos(str, suffix) {
+return str.endsWith(suffix, 3);
+}
+"#;
+    let zig = transpile_and_check(js, "test_r47_ends_with_position");
+    assert!(
+        zig.contains("js_string.endsWith("),
+        "Expected 'js_string.endsWith(' in:\n{}",
+        zig
+    );
+}
+
 // Test: String.includes()
 #[test]
 fn test_p6_string_includes() {
