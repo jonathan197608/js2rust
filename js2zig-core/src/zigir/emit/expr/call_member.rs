@@ -152,8 +152,11 @@ impl Emitter {
                 self.emit_dot_access(object, field);
             }
             FieldKind::ArrayListLen => {
+                // R44-Bug3: Wrap in @as(i64, @intCast(...)) to match infer
+                // layer's I64 type annotation. Without this, .items.len
+                // returns usize which can't be assigned to i64 variables.
                 // Wrap in parens for complex expressions that may contain `catch`.
-                // Simple identifiers don't need parens: arr.items.len is correct.
+                self.write("@as(i64, @intCast(");
                 if matches!(
                     *object,
                     crate::zigir::types::IrExpr::Ident(_)
@@ -166,6 +169,7 @@ impl Emitter {
                     self.emit_expr(object);
                     self.write(").items.len");
                 }
+                self.write("))");
             }
             FieldKind::StringLen => {
                 // JS string.length returns UTF-16 code unit count, not byte count

@@ -66,7 +66,10 @@ pub fn bin_op_to_zig(op: BinOp) -> &'static str {
         BinOp::Mul => "*",
         BinOp::Div => "/",
         BinOp::Mod => "%",
-        BinOp::Pow => "@pow", // Zig uses std.math.pow / @pow
+        // R44-Bug5: Pow should never reach here — it's handled by PowExpr
+        // special path. Using a bare identifier as infix produces a Zig
+        // compile error, which is better than silently wrong code.
+        BinOp::Pow => "__pow_should_use_PowExpr__",
         BinOp::Lt => "<",
         BinOp::Gt => ">",
         BinOp::Le => "<=",
@@ -83,9 +86,19 @@ pub fn bin_op_to_zig(op: BinOp) -> &'static str {
         BinOp::BitXor => "^",
         BinOp::Shl => "<<",
         BinOp::Shr => ">>",
-        BinOp::UrShr => ">>", // Zig logical right shift needs @as + @truncate
-        BinOp::In => "==",    // JS `in` → Zig field existence check (handled at call site)
-        BinOp::InstanceOf => "==", // Simplified
+        // R44-Bug6: UrShr is handled by special path (mod.rs) that uses
+        // @as(u32, @bitCast(...)) >> for logical right shift. The fallback
+        // ">>" is arithmetic right shift in Zig, which is semantically
+        // wrong for JS >>>. Using a distinct identifier here makes the
+        // error obvious if the special path is ever bypassed.
+        BinOp::UrShr => "__urshr_should_use_special_path__",
+        // R44: `in` is handled by special path (field existence check).
+        // Fallback produces a distinct error identifier.
+        BinOp::In => "__in_should_use_special_path__",
+        // R44-Bug2: InstanceOf should never reach here — it needs runtime
+        // type checking, not a simple == comparison. Using a distinct
+        // identifier makes the error obvious if no special path handles it.
+        BinOp::InstanceOf => "__instanceof_not_supported__",
     }
 }
 

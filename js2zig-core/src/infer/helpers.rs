@@ -14,9 +14,13 @@ pub fn binding_name<'a>(pattern: &BindingPattern<'a>) -> Option<&'a str> {
 }
 
 /// Extract the identifier name from an Expression if it is an Identifier.
+/// Also handles ParenthesizedExpression (recurses into inner expression)
+/// and ThisExpression (returns "this").
 pub fn extract_expr_identifier_name(expr: &Expression) -> Option<String> {
     match expr {
         Expression::Identifier(id) => Some(id.name.to_string()),
+        Expression::ParenthesizedExpression(pe) => extract_expr_identifier_name(&pe.expression),
+        Expression::ThisExpression(_) => Some("this".to_string()),
         _ => None,
     }
 }

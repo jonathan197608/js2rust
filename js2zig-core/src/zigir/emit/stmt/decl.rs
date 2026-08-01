@@ -6,6 +6,7 @@ use crate::zigir::emit::Emitter;
 use crate::zigir::emit::helpers::{
     EmitterHelpers, format_param_with_rest, format_return_type, zig_ident,
 };
+use crate::zigir::ident::zig_safe_name;
 use crate::zigir::types::{
     IrAssignTarget, IrBlock, IrClassDecl, IrClassField, IrClassMethod, IrClosureStruct, IrExpr,
     IrFnDecl, IrStmt, IrTypedef, IrVarDecl,
@@ -765,7 +766,7 @@ impl Emitter {
             self.writeln(&format!(
                 "{} {}: {} = {};",
                 kw,
-                zig_ident(&f.name),
+                zig_safe_name(&f.name),
                 f.zig_type.to_zig_type(),
                 default_str
             ));
@@ -783,7 +784,7 @@ impl Emitter {
 
         if body_always_exits {
             for f in fields {
-                self.writeln(&format!("_ = &{};", zig_ident(&f.name)));
+                self.writeln(&format!("_ = &{};", zig_safe_name(&f.name)));
             }
         }
 
@@ -794,7 +795,7 @@ impl Emitter {
             // Return struct literal (from fields assigned in body — values are the local vars)
             let pairs: Vec<(&str, String)> = fields
                 .iter()
-                .map(|f| (f.name.as_str(), zig_ident(&f.name)))
+                .map(|f| (f.name.as_str(), zig_safe_name(&f.name)))
                 .collect();
             self.emit_struct_literal_return(&pairs);
         }
