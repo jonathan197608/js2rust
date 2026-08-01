@@ -16,6 +16,10 @@ threadlocal var last_throw_msg: ?[]const u8 = null;
 
 /// Store the name and message of a `throw new Error(msg)` expression.
 /// Called before the actual `break :label error.JsThrow` in generated code.
+/// Note: previous values are not freed — under Arena allocator (production),
+/// free is a no-op and memory is reclaimed via arena reset. Under GPA/testing,
+/// callers must ensure throws are caught (fromError clears the vars) before
+/// the next setLastThrow to avoid leaks.
 pub fn setLastThrow(name: []const u8, msg: []const u8) void {
     last_throw_name = name;
     last_throw_msg = msg;

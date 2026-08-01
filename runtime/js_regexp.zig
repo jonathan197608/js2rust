@@ -101,7 +101,7 @@ pub const JsRegExp = struct {
             }
             // Zero-length match: advance lastIndex by 1 to prevent infinite loop.
             if (end_pos == self.lastIndex) {
-                self.lastIndex = end_pos + 1;
+                self.lastIndex = @min(end_pos + 1, subject.len);
             } else {
                 self.lastIndex = end_pos;
             }

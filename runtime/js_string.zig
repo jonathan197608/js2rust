@@ -534,9 +534,11 @@ pub fn split(alloc: Allocator, s: []const u8, sep: []const u8) ![][]const u8 {
 
     if (sep.len == 0) {
         // Split into individual UTF-16 code units per ECMAScript spec.
-        // BMP characters (U+0000–U+FFFF) are borrowed slices of the original
-        // string. Supplementary characters produce two allocated 3-byte UTF-8
-        // strings (one per UTF-16 surrogate half) via encodeCodeUnit.
+        // All slices are heap-allocated (duped) so the caller can uniformly
+        // free each element without worrying about borrowed vs owned.
+        // BMP characters produce a dupe of the original slice; supplementary
+        // characters produce two allocated 3-byte UTF-8 strings (one per
+        // UTF-16 surrogate half) via encodeCodeUnit.
         var allocated: std.ArrayList([]const u8) = .empty;
         errdefer {
             for (allocated.items) |str| alloc.free(str);
@@ -547,30 +549,27 @@ pub fn split(alloc: Allocator, s: []const u8, sep: []const u8) ![][]const u8 {
         while (i < s.len) {
             const decoded = decodeUtf8CodePoint(s, i) orelse {
                 // Invalid byte — treat as single code unit (raw byte)
-                try parts.append(alloc, s[i .. i + 1]);
+                const byte_slice = try alloc.dupe(u8, s[i .. i + 1]);
+                try allocated.append(alloc, byte_slice);
+                try parts.append(alloc, byte_slice);
                 i += 1;
                 continue;
             };
             if (decoded.code_point <= 0xFFFF) {
-                // BMP: borrow slice from original string
-                try parts.append(alloc, s[i .. i + decoded.len]);
+                // BMP: dupe slice from original string for uniform ownership
+                const borrowed = s[i .. i + decoded.len];
+                const owned_slice = try alloc.dupe(u8, borrowed);
+                try allocated.append(alloc, owned_slice);
+                try parts.append(alloc, owned_slice);
             } else {
                 // Supplementary: emit two surrogate halves as UTF-8 strings
                 const high: u16 = @intCast(0xD800 + ((decoded.code_point - 0x10000) >> 10));
                 const low: u16 = @intCast(0xDC00 + ((decoded.code_point - 0x10000) & 0x3FF));
                 const hi_str = try encodeCodeUnit(alloc, high);
-                // RT-1: Free hi_str if allocated.append fails (OOM window)
-                allocated.append(alloc, hi_str) catch |err| {
-                    alloc.free(hi_str);
-                    return err;
-                };
+                try allocated.append(alloc, hi_str);
                 try parts.append(alloc, hi_str);
                 const lo_str = try encodeCodeUnit(alloc, low);
-                // RT-1: Free lo_str if allocated.append fails (OOM window)
-                allocated.append(alloc, lo_str) catch |err| {
-                    alloc.free(lo_str);
-                    return err;
-                };
+                try allocated.append(alloc, lo_str);
                 try parts.append(alloc, lo_str);
             }
             i += decoded.len;
@@ -937,8 +936,12 @@ test "split" {
 test "split empty separator (R8 P0-1)" {
     const alloc = std.testing.allocator;
     // split("") must split into individual code points, not infinite-loop.
+    // All elements are heap-allocated (duped) for uniform ownership.
     const result = try split(alloc, "abc", "");
-    defer alloc.free(result);
+    defer {
+        for (result) |part| alloc.free(part);
+        alloc.free(result);
+    }
     try std.testing.expectEqual(@as(usize, 3), result.len);
     try std.testing.expectEqualStrings("a", result[0]);
     try std.testing.expectEqualStrings("b", result[1]);

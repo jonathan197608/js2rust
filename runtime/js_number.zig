@@ -106,6 +106,9 @@ pub fn parseInt(value: anytype, radix: ?i64) i64 {
             .array => {
                 // asString allocates a joined string on the heap.
                 // On OOM it returns literal "" (not heap-allocated, must not free).
+                // Note: empty array success path also returns 0-len slice;
+                // under Arena (production) free is no-op, so the len>0 guard
+                // only skips a harmless no-op. Under GPA this leaks 0 bytes.
                 const s = value.asString(js_allocator.allocator());
                 defer if (s.len > 0) js_allocator.allocator().free(s);
                 return parseIntStr(s, radix);
@@ -178,7 +181,6 @@ fn parseIntStr(s: []const u8, radix: ?i64) i64 {
     var overflow = false;
     var has_digit = false;
     const base_i128: i128 = @intCast(r);
-    const mul_limit: i128 = @divTrunc(std.math.maxInt(i128), base_i128);
     while (i < len) {
         const c = s[i];
         const digit: u8 = blk: {
@@ -189,8 +191,9 @@ fn parseIntStr(s: []const u8, radix: ?i64) i64 {
         };
         if (digit >= r) break;
         if (!overflow) {
-            // Check if `result * base + digit` would overflow i128
-            if (result > mul_limit) {
+            // Check if `result * base + digit` would overflow i128.
+            // Subtract digit first then divide — exact check, no off-by-one.
+            if (result > @divTrunc(std.math.maxInt(i128) - @as(i128, digit), base_i128)) {
                 overflow = true;
             } else {
                 result = result * base_i128 + @as(i128, digit);
