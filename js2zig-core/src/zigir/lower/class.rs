@@ -206,7 +206,8 @@ impl Lowerer {
         // static field names already registered in class_static_fields during pre-scan
 
         // Compute needs_deinit: true if any field is Map, Set, ArrayList, BigInt,
-        // RegExp, JsError, JsSymbol, or a NamedStruct that itself needs deinit (nested class).
+        // RegExp, JsError, JsSymbol, a dynamic object (Struct with empty fields,
+        // i.e. JsObjectMap), or a NamedStruct that itself needs deinit (nested class).
         let needs_deinit = fields.iter().any(|f| {
             matches!(
                 f.zig_type,
@@ -215,6 +216,7 @@ impl Lowerer {
                 || matches!(f.zig_type, ZigType::BigInt)
                 || matches!(f.zig_type, ZigType::JsError)
                 || matches!(f.zig_type, ZigType::JsSymbol)
+                || matches!(f.zig_type, ZigType::Struct(ref sf) if sf.is_empty())
         });
 
         Some(IrClassDecl {

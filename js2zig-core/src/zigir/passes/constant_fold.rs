@@ -309,6 +309,10 @@ fn fold_binary(op: BinOp, left: &IrExpr, right: &IrExpr) -> Option<IrExpr> {
                     if *b == 0 {
                         return None;
                     }
+                    // Guard against i64::MIN % -1 which overflows in debug mode.
+                    if *b == -1 {
+                        return Some(IrExpr::IntLiteral(0));
+                    }
                     return Some(IrExpr::IntLiteral(a % b));
                 }
                 // JS bitwise ops operate on Int32 (32-bit signed), not i64.
@@ -956,6 +960,13 @@ mod tests {
         // ~0xFFFFFFFF: ToInt32 = -1, ~(-1) = 0.
         // Old i64 fold gave -4294967296 — wrong.
         assert_fold_unary_int(UnaOp::BitNot, 0xFFFF_FFFF, 0);
+    }
+
+    // R48-1: i64::MIN % -1 overflows in debug mode. The fold must return 0
+    // instead of panicking.
+    #[test]
+    fn test_fold_mod_min_div_neg_one_no_panic() {
+        assert_fold_binary_int(BinOp::Mod, i64::MIN, -1, 0);
     }
 
     // Helper to create a module with a function wrapping the given body

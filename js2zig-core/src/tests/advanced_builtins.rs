@@ -3017,3 +3017,42 @@ export function matchAllVar(s) {
         zig
     );
 }
+
+// R48-3: class needs_deinit missed ZigType::Struct with empty fields
+// (JsObjectMap / dynamic object). A class with a dynamic-object field
+// would not get a deinit() method, leaking the JsObjectMap's memory.
+#[test]
+fn test_r48_class_dynamic_object_field_needs_deinit() {
+    let js = r#"
+class WithDynamicObj {
+    constructor() {
+        this.data = {};
+    }
+}
+
+/**
+ * @returns {i64}
+ */
+export function testDynamicObjDeinit() {
+    const obj = new WithDynamicObj();
+    return 1;
+}
+"#;
+    let zig = transpile_and_check(js, "test_r48_class_dynamic_object_field_needs_deinit");
+    println!(
+        "=== R48-3: class with dynamic-object field needs deinit ===\n{}",
+        zig
+    );
+    // The class should have a deinit method that frees the dynamic object.
+    assert!(
+        zig.contains("pub fn deinit(self: *@This(), alloc: std.mem.Allocator) void"),
+        "Expected deinit method for class with dynamic-object field:\n{}",
+        zig
+    );
+    // The variable should get `defer ...deinit(...)` to trigger cleanup.
+    assert!(
+        zig.contains("defer obj.deinit(js_allocator.allocator())"),
+        "Expected 'defer obj.deinit(...)' for variable with dynamic-object-field class:\n{}",
+        zig
+    );
+}

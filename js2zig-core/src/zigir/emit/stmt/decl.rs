@@ -627,6 +627,7 @@ impl Emitter {
             self.writeln("");
             self.writeln("pub fn deinit(self: *@This(), alloc: std.mem.Allocator) void {");
             self.indent_push();
+            let mut used_alloc = false;
             for field in &class.fields {
                 let needs_field_deinit = matches!(
                     &field.zig_type,
@@ -636,10 +637,27 @@ impl Emitter {
                 ) || matches!(&field.zig_type, ZigType::ArrayList(_))
                     || matches!(&field.zig_type, ZigType::BigInt)
                     || matches!(&field.zig_type, ZigType::JsError)
-                    || matches!(&field.zig_type, ZigType::JsSymbol);
+                    || matches!(&field.zig_type, ZigType::JsSymbol)
+                    || matches!(&field.zig_type, ZigType::Struct(f) if f.is_empty());
                 if needs_field_deinit {
-                    self.writeln(&format!("self.{}.deinit(alloc);", zig_ident(&field.name)));
+                    // JsObjectMap (Struct with empty fields) has deinit(self) with 0 args.
+                    let is_object_map =
+                        matches!(&field.zig_type, ZigType::Struct(f) if f.is_empty());
+                    let deinit_args = if is_object_map { "" } else { "alloc" };
+                    if !is_object_map {
+                        used_alloc = true;
+                    }
+                    self.writeln(&format!(
+                        "self.{}.deinit({});",
+                        zig_ident(&field.name),
+                        deinit_args
+                    ));
                 }
+            }
+            // Suppress "unused function parameter" when only JsObjectMap fields
+            // (which don't take an allocator argument) are present.
+            if !used_alloc {
+                self.writeln("_ = alloc;");
             }
             self.indent_pop();
             self.writeln("}");
@@ -668,11 +686,17 @@ impl Emitter {
             ) || matches!(field_ty, ZigType::ArrayList(_))
                 || matches!(field_ty, ZigType::BigInt)
                 || matches!(field_ty, ZigType::JsError)
-                || matches!(field_ty, ZigType::JsSymbol);
+                || matches!(field_ty, ZigType::JsSymbol)
+                || matches!(field_ty, ZigType::Struct(f) if f.is_empty());
             if needs_static_deinit {
+                let static_deinit_args = if matches!(field_ty, ZigType::Struct(f) if f.is_empty()) {
+                    ""
+                } else {
+                    "js_allocator.allocator()"
+                };
                 self.static_deinit_buffer.push_str(&format!(
-                    "    {}.deinit(js_allocator.allocator());\n",
-                    var_name
+                    "    {}.deinit({});\n",
+                    var_name, static_deinit_args
                 ));
             }
         }

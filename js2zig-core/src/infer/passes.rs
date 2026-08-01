@@ -400,7 +400,13 @@ impl TypeInferrer {
                         _ => {}
                     }
                 }
-                _ => {}
+                // Collect identifier references from all other top-level statements
+                // (VariableDeclaration, ExpressionStatement, IfStatement, etc.)
+                // to prevent unused-constant elimination from skipping consts that
+                // are only referenced in top-level non-function/class statements.
+                _ => {
+                    Self::collect_idents_from_stmt(stmt, &names);
+                }
             }
         }
         self.used_names = names.into_inner();

@@ -3118,3 +3118,39 @@ class Derived extends Base {}
         zig
     );
 }
+
+// R48-2: collect_used_names missed top-level VariableDeclaration and
+// ExpressionStatement, so a top-level const only referenced in another
+// top-level expression was treated as unused and skipped by the lowerer.
+// The generated Zig then referenced an undeclared variable → compile error.
+#[test]
+fn test_r48_toplevel_const_used_in_toplevel_expr() {
+    let js = r#"
+const A = 42;
+const B = A + 1;
+
+/**
+ * @returns {i64}
+ */
+export function getB() {
+    return B;
+}
+"#;
+    let zig = transpile_and_check(js, "test_r48_toplevel_const_used_in_toplevel_expr");
+    // Both A and B must be emitted — B references A at the top level.
+    assert!(
+        !zig.contains("skipped unused toplevel const: A"),
+        "A must NOT be skipped (it is used in `const B = A + 1`):\n{}",
+        zig
+    );
+    assert!(
+        zig.contains("const A"),
+        "Expected 'const A' declaration in output:\n{}",
+        zig
+    );
+    assert!(
+        zig.contains("const B"),
+        "Expected 'const B' declaration in output:\n{}",
+        zig
+    );
+}
