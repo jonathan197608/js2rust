@@ -644,10 +644,11 @@ impl Lowerer {
                             "charAt" | "substring" | "slice" | "toLowerCase" | "toUpperCase"
                             | "trim" | "repeat" | "replace" | "replaceAll" | "padStart"
                             | "padEnd" | "concat" | "at" => return Some(ZigType::Str),
-                            // charCodeAt can return NaN → F64; codePointAt can
-                            // return undefined → JsAny (P1-9 fix, R22-INF-1).
+                            // charCodeAt can return NaN → F64.
+                            // codePointAt returns i64 (0 for out-of-bounds,
+                            // matching runtime js_string.codePointAt).
                             "charCodeAt" => return Some(ZigType::F64),
-                            "codePointAt" => return Some(ZigType::JsAny),
+                            "codePointAt" => return Some(ZigType::I64),
                             "indexOf" | "lastIndexOf" => return Some(ZigType::I64),
                             "includes" | "startsWith" | "endsWith" => return Some(ZigType::Bool),
                             // match/matchAll return JsAny (match array or null/iterator).

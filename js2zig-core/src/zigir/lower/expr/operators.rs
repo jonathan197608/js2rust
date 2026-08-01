@@ -1041,10 +1041,7 @@ impl Lowerer {
         &mut self,
         ae: &AssignmentExpression,
     ) -> crate::zigir::types::IrExpr {
-        use crate::zigir::types::{
-            IrAssignTarget, IrDestructureAccess, IrDestructureBindingDecl, IrDestructureDecl,
-            IrDestructureKind, IrExpr, IrStmt, IrVarDecl,
-        };
+        use crate::zigir::types::{IrAssignTarget, IrExpr, IrStmt, IrVarDecl};
 
         // Lower the RHS into a temp variable (always use temp for safety).
         let temp_name = self.name_mangler.next_name("_js_dst");
@@ -1064,8 +1061,7 @@ impl Lowerer {
         let is_struct = struct_field_names.is_some();
         let is_arraylist = matches!(init_type, Some(ZigType::ArrayList(_)));
 
-        // Build the bindings vector and assign statements.
-        let mut bindings: Vec<IrDestructureBindingDecl> = Vec::new();
+        // Build assign statements.
         let mut assign_stmts: Vec<IrStmt> = Vec::new();
 
         // Common helper: push a temp var decl as the first statement.
@@ -1108,18 +1104,6 @@ impl Lowerer {
 
                     let default_ir = default_expr;
 
-                    bindings.push(IrDestructureBindingDecl {
-                        name: self.make_ident(&bind_name),
-                        is_const: false,
-                        access: IrDestructureAccess::ObjectField {
-                            source: temp_name.clone(),
-                            key: key_name.clone(),
-                            is_struct_field,
-                        },
-                        default: default_ir.clone(),
-                    });
-
-                    // Build the read expression for this binding.
                     let read_expr = if is_struct && is_struct_field {
                         IrExpr::FieldAccess {
                             object: Box::new(temp_ident.clone()),
@@ -1179,16 +1163,6 @@ impl Lowerer {
 
                     let default_ir = default;
 
-                    bindings.push(IrDestructureBindingDecl {
-                        name: self.make_ident(&bind_name),
-                        is_const: false,
-                        access: IrDestructureAccess::ArrayIndex {
-                            source: temp_name.clone(),
-                            index: i,
-                        },
-                        default: default_ir.clone(),
-                    });
-
                     // Build the read expression for this index.
                     let read_expr = if is_arraylist {
                         IrExpr::IndexAccess {
@@ -1238,23 +1212,9 @@ impl Lowerer {
             }
         }
 
-        // The destructure decl is not needed for emit; we generate explicit assignments.
-        let _ = IrDestructureDecl {
-            temp_name: Some(temp_name.clone()),
-            init: IrExpr::Undefined,
-            kind: if matches!(
-                &ae.left,
-                oxc_ast::ast::AssignmentTarget::ArrayAssignmentTarget(_)
-            ) {
-                IrDestructureKind::Array { is_arraylist }
-            } else {
-                IrDestructureKind::Object {
-                    is_struct,
-                    struct_field_names,
-                }
-            },
-            bindings,
-        };
+        // R45-Bug3: Removed dead IrDestructureDecl construction that was
+        // immediately discarded. The actual assignments are in assign_stmts,
+        // and the result is returned via BlockExpr below.
 
         IrExpr::BlockExpr {
             label: blk_label,

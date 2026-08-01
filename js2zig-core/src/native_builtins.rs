@@ -862,7 +862,7 @@ pub fn builtin_return_type(builtin: &BuiltinCall) -> Option<ZigType> {
         BuiltinCall::StringIndexOf | BuiltinCall::StringLastIndexOf | BuiltinCall::StringSearch => {
             Some(ZigType::I64)
         }
-        BuiltinCall::StringMatch => None, // returns ?[][]const u8 — complex type, defer to inference
+        BuiltinCall::StringMatch => Some(ZigType::JsAny), // returns match array or null → JsAny
         BuiltinCall::StringMatchAll => Some(ZigType::JsAny), // returns JsAny array of arrays
         BuiltinCall::StringCodePointAt => Some(ZigType::I64), // Number (0-0x10FFFF or 0 for out-of-bounds)
         BuiltinCall::StringIncludes
