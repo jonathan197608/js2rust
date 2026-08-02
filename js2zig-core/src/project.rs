@@ -2,7 +2,7 @@
 use std::collections::HashSet;
 use std::fs;
 use std::path::{Path, PathBuf};
-use std::process::Command;
+// Command is provided by crate::zig_command()
 
 /// A single per-file Zig module with its dependency info.
 #[derive(Debug, Clone)]
@@ -178,7 +178,7 @@ pub fn regex_search(pattern: []const u8, subject: []const u8) i64 {
 
 /// Run `zig build` in the project directory to get the suggested fingerprint.
 fn compute_fingerprint(project_dir: &Path) -> Option<String> {
-    let output = Command::new("zig")
+    let output = crate::zig_command()
         .arg("build")
         .current_dir(project_dir)
         .output()

@@ -4,7 +4,7 @@ use std::collections::{HashMap, HashSet};
 use std::fs;
 use std::hash::{Hash, Hasher};
 use std::path::{Path, PathBuf};
-use std::process::{Command, Stdio};
+use std::process::Stdio; // Command is provided by crate::zig_command()
 
 /// Resolve paths relative to the workspace root (parent of core crate).
 fn workspace_dir() -> PathBuf {
@@ -688,7 +688,7 @@ fn transpile_cache_miss(
     // === Zig build ===
     if config.build.run_zig_build {
         let project_path = out_dir.join(project_name);
-        let mut build_cmd = Command::new("zig");
+        let mut build_cmd = crate::zig_command();
         build_cmd.arg("build");
         if let Some(ref opt) = config.build.zig_optimize {
             build_cmd.arg(format!("-Doptimize={}", opt));
@@ -721,7 +721,7 @@ fn transpile_cache_miss(
                 println!("  zig test: SKIPPED (project has host function dependencies)");
             }
         } else {
-            let test_result = Command::new("zig")
+            let test_result = crate::zig_command()
                 .arg("build")
                 .arg("test")
                 .current_dir(&project_path)

@@ -8,4 +8,5 @@ members = [
     "examples/test-bin-project",
     "examples/showcase-project",
     "examples/mdn-test-project",
+    "examples/test262-project",
 ]

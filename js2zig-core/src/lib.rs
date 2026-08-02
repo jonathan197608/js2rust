@@ -28,6 +28,18 @@ pub(crate) mod native_builtins;
 pub(crate) mod tests;
 
 use std::path::PathBuf;
+use std::process::Command;
+
+/// Create a `Command` for the Zig binary.
+///
+/// Respects the `JS2RUST_ZIG` environment variable, allowing users to
+/// override the Zig executable path (e.g. when the PATH-installed Zig
+/// has permission issues on Windows Winget installations).
+/// Falls back to `"zig"` on PATH if the env var is not set.
+pub(crate) fn zig_command() -> Command {
+    let zig = std::env::var("JS2RUST_ZIG").unwrap_or_else(|_| "zig".to_string());
+    Command::new(zig)
+}
 
 /// Host function type for FFI binding generation.
 #[derive(Debug, Clone, Copy, PartialEq, Eq)]

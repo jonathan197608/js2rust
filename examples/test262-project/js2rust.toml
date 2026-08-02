@@ -1,0 +1,22 @@
+[project]
+js_dir = "js_src"
+js_files = [
+    "app.js",
+    "test262_language_expressions_addition.js",
+    "test262_language_expressions_multiplication.js",
+    "test262_language_expressions_string_concat.js",
+    "test262_language_statements_if_else.js",
+    "test262_language_statements_for_loop.js",
+    "test262_language_literals_numeric.js",
+    "test262_language_expressions_strict_equality.js",
+    "test262_language_expressions_logical_and.js",
+    "test262_language_statements_while.js",
+]
+
+[build]
+force_rebuild = true
+
+[[host_functions]]
+name = "host_assert_fail"
+params = ["str"]
+returns = "void"

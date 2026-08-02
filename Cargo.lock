@@ -971,6 +971,13 @@ dependencies = [
 ]
 
 [[package]]
+name = "test262-project"
+version = "0.1.0"
+dependencies = [
+ "js2rust-bridge",
+]
+
+[[package]]
 name = "textwrap"
 version = "0.16.2"
 source = "registry+https://github.com/rust-lang/crates.io-index"
