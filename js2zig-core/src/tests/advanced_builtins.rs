@@ -3092,3 +3092,33 @@ return sym.description == "test";
         zig
     );
 }
+
+#[test]
+fn test_r50_number_parseint_return_type() {
+    // R50-Bug3: Number.parseInt() should use js_uri.parseInt (returns f64)
+    // instead of js_number.parseInt (returns i64, can't represent NaN).
+    // Per ECMA-262, Number.parseInt === global parseInt, so they must behave
+    // identically. The type table marks both as F64.
+    let js = r#"
+/**
+ * @param {string} s
+ * @returns {number}
+ */
+export function parseNum(s) {
+return Number.parseInt(s);
+}
+"#;
+    let zig = transpile_and_check(js, "test_r50_number_parseint_return_type");
+    println!("=== R50-Bug3: Number.parseInt return type ===\n{}", zig);
+    // Should generate js_uri.parseInt call (not js_number.parseInt)
+    assert!(
+        zig.contains("js_uri.parseInt"),
+        "Expected js_uri.parseInt call (not js_number.parseInt):\n{}",
+        zig
+    );
+    assert!(
+        !zig.contains("js_number.parseInt"),
+        "Should NOT use js_number.parseInt (returns i64, can't represent NaN):\n{}",
+        zig
+    );
+}

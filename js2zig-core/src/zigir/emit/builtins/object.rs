@@ -652,10 +652,11 @@ impl Emitter {
                 }
             }
             "parseInt" => {
-                // parseInt is a static method on Number (Number.parseInt(str)),
-                // not an instance method. The `obj` (e.g. "Number") is the
-                // constructor name, not a valid Zig value — ignore it.
-                self.write("js_number.parseInt(");
+                // R50-Bug3: Number.parseInt === global parseInt (ECMA-262).
+                // js_uri.parseInt returns f64 (handles NaN), js_number.parseInt
+                // returns i64 (can't express NaN). Use js_uri.parseInt to match
+                // both the type table (F64) and JS semantics.
+                self.write("js_uri.parseInt(");
                 for (i, arg) in args.iter().enumerate() {
                     if i > 0 {
                         self.write(", ");
