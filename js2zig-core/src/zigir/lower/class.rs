@@ -721,6 +721,45 @@ impl Lowerer {
                         },
                     });
                 }
+                // R50-Bug5: <<= >>= &= |= ^= → expand into Assign + Binary (non-BigInt)
+                // Same Int32 expansion as lower_assignment (operators.rs R50-Bug4).
+                // Without this, `this.field <<= n` in a constructor emits Zig native
+                // `val <<= n` which (a) lacks JS ToInt32 semantics and (b) fails to
+                // compile when the shift amount is a runtime i64 (Zig requires u5/u6).
+                if matches!(
+                    ae.operator,
+                    AssignmentOperator::ShiftLeft
+                        | AssignmentOperator::ShiftRight
+                        | AssignmentOperator::BitwiseAnd
+                        | AssignmentOperator::BitwiseOR
+                        | AssignmentOperator::BitwiseXOR
+                ) {
+                    let bin_op = match ae.operator {
+                        AssignmentOperator::ShiftLeft => BinOp::Shl,
+                        AssignmentOperator::ShiftRight => BinOp::Shr,
+                        AssignmentOperator::BitwiseAnd => BinOp::BitAnd,
+                        AssignmentOperator::BitwiseOR => BinOp::BitOr,
+                        AssignmentOperator::BitwiseXOR => BinOp::BitXor,
+                        _ => unreachable!(),
+                    };
+                    let value_ir = self.lower_expr(&ae.right);
+                    let read_expr = IrExpr::Ident(self.make_ident(&fname));
+                    let left_type = self
+                        .infer_assign_target_type(&ae.left)
+                        .unwrap_or(ZigType::I64);
+                    let right_type = self.infer_expr_type(&ae.right).unwrap_or(ZigType::I64);
+                    return Some(IrStmt::Assign {
+                        target: IrAssignTarget::Ident(self.make_ident(&fname)),
+                        op: AssignOp::Assign,
+                        value: IrExpr::Binary {
+                            op: bin_op,
+                            left: Box::new(read_expr),
+                            right: Box::new(value_ir),
+                            left_type: Some(left_type),
+                            right_type: Some(right_type),
+                        },
+                    });
+                }
                 // Non-BigInt compound or plain =: map operator directly.
                 let op = match ae.operator {
                     AssignmentOperator::Assign => AssignOp::Assign,
@@ -729,11 +768,6 @@ impl Lowerer {
                     AssignmentOperator::Multiplication => AssignOp::Mul,
                     AssignmentOperator::Division => AssignOp::Div,
                     AssignmentOperator::Remainder => AssignOp::Mod,
-                    AssignmentOperator::ShiftLeft => AssignOp::Shl,
-                    AssignmentOperator::ShiftRight => AssignOp::Shr,
-                    AssignmentOperator::BitwiseAnd => AssignOp::BitAnd,
-                    AssignmentOperator::BitwiseOR => AssignOp::BitOr,
-                    AssignmentOperator::BitwiseXOR => AssignOp::BitXor,
                     AssignmentOperator::LogicalAnd => AssignOp::LogicAnd,
                     AssignmentOperator::LogicalOr => AssignOp::LogicOr,
                     AssignmentOperator::LogicalNullish => AssignOp::Nullish,

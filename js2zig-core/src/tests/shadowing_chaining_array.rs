@@ -48,6 +48,38 @@ return x;
     );
 }
 
+/// R50-Bug5: `this.field <<= value` in constructor should use Int32 expansion
+/// (same as R50-Bug4 for regular variables). The `try_rewrite_this_field_assignment`
+/// path in class.rs was bypassing the Int32 expansion in `lower_assignment`,
+/// directly mapping to `AssignOp::Shl` which produces invalid Zig `<<=` with
+/// runtime i64 shift amounts.
+#[test]
+fn test_this_field_bit_assign_int32() {
+    let js = r#"
+class Shifter {
+    constructor(n) {
+        this.val = 1;
+        this.val <<= n;
+    }
+}
+"#;
+    let zig = transpile_and_check(js, "test_this_field_bit_assign_int32");
+    println!("=== this.field <<= int32 expansion ===\n{}", zig);
+    // Should NOT use Zig native <<= (would fail: i64 << i64 is a type error
+    // and lacks Int32 semantics)
+    assert!(
+        !zig.contains("<<="),
+        "this.field <<= should not use Zig native <<= (needs Int32 expansion):\n{}",
+        zig
+    );
+    // Should use Int32 + u5 expansion
+    assert!(
+        zig.contains("@as(u5, @truncate"),
+        "Expected u5 shift amount masking for this.field <<=:\n{}",
+        zig
+    );
+}
+
 /// Test #947: Function parameter name shadowing outer variable.
 /// JS allows function parameters to have the same name as variables
 /// in the outer scope. Zig doesn't allow this.
