@@ -65,6 +65,9 @@ type CallbackInlineParts = (
     String,
     bool,
     String,
+    Option<String>,
+    bool,
+    String,
     Vec<crate::zigir::types::IrStmt>,
     Option<IrExpr>,
 );
@@ -306,7 +309,7 @@ impl Lowerer {
     }
 
     /// Shared logic: parse callback parameters and lower the body from a CallExpression.
-    /// Returns (kind, elem_param, has_idx_param, idx_param, ir_body, reduce_init) or None.
+    /// Returns (kind, elem_param, has_idx_param, idx_param, reduce_idx_param, has_arr_param, arr_param, ir_body, reduce_init) or None.
     ///
     /// `elem_type` and `collection_kind` are used to set `var_types` for the callback
     /// parameters BEFORE lowering the body, so binary expressions in the body have
@@ -420,6 +423,37 @@ impl Lowerer {
         };
         let has_idx_param = idx_param_raw.is_some();
 
+        // Parse the third callback parameter.
+        // For reduce/reduceRight: (acc, elem, index, array) → third param is the index.
+        // For other callbacks: (elem, index, array) → third param is the array reference.
+        let is_reduce = matches!(
+            kind,
+            crate::zigir::types::ArrayCallbackKind::Reduce
+                | crate::zigir::types::ArrayCallbackKind::ReduceRight
+        );
+        let third_param_raw: Option<String> = params
+            .items
+            .get(2)
+            .and_then(|p| crate::infer::binding_name(&p.pattern))
+            .map(|s| s.to_string());
+        // For reduce, the third param is the index; for others, the third param is the array.
+        let reduce_idx_param_raw: Option<String> = if is_reduce {
+            third_param_raw.clone()
+        } else {
+            None
+        };
+        // The array param: for reduce it's the 4th param, for others it's the 3rd param.
+        let arr_param_raw: Option<String> = if is_reduce {
+            params
+                .items
+                .get(3)
+                .and_then(|p| crate::infer::binding_name(&p.pattern))
+                .map(|s| s.to_string())
+        } else {
+            third_param_raw.clone()
+        };
+        let has_arr_param = arr_param_raw.is_some();
+
         // Set var_types AND fn_local_types for callback params BEFORE lowering
         // the body. Both maps must be set because get_var_type() checks
         // fn_local_types first — if only var_types is set, an outer variable
@@ -477,6 +511,41 @@ impl Lowerer {
                 .insert(elem_param_raw.clone(), elem_type.clone());
         }
 
+        // Save reduce_idx param name + old var_types value for restore after body.
+        // For reduce/reduceRight, the third param is the index (I64).
+        let (saved_reduce_idx_name, saved_reduce_idx_var_type) = if let Some(ri_name) =
+            &reduce_idx_param_raw
+            && ri_name != "_"
+        {
+            let name = ri_name.clone();
+            let old = self.type_info.var_types.insert(name.clone(), ZigType::I64);
+            if let Some(ctx) = self.fn_ctx.as_mut() {
+                ctx.fn_local_types.insert(name.clone(), ZigType::I64);
+            }
+            (Some(name), old)
+        } else {
+            (None, None)
+        };
+
+        // Save arr param name + old var_types value for restore after body.
+        // The array param is a reference to the original array (ArrayList type).
+        let (saved_arr_name, saved_arr_var_type) = if let Some(arr_name) = &arr_param_raw
+            && arr_name != "_"
+        {
+            let arr_type = ZigType::ArrayList(Box::new(elem_type.clone()));
+            let name = arr_name.clone();
+            let old = self
+                .type_info
+                .var_types
+                .insert(name.clone(), arr_type.clone());
+            if let Some(ctx) = self.fn_ctx.as_mut() {
+                ctx.fn_local_types.insert(name.clone(), arr_type);
+            }
+            (Some(name), old)
+        } else {
+            (None, None)
+        };
+
         // Check if parameters are actually used in the callback body.
         let elem_used = body
             .statements
@@ -497,6 +566,36 @@ impl Lowerer {
                         .any(|s| Self::ast_stmt_uses_ident(idx_name, s)))
             {
                 idx_name.clone()
+            } else {
+                "_".to_string()
+            }
+        } else {
+            String::new()
+        };
+
+        // Determine final reduce_idx_param: only used if the body references it
+        let reduce_idx_param: Option<String> = reduce_idx_param_raw.as_ref().and_then(|ri_name| {
+            if ri_name != "_"
+                && body
+                    .statements
+                    .iter()
+                    .any(|s| Self::ast_stmt_uses_ident(ri_name, s))
+            {
+                Some(ri_name.clone())
+            } else {
+                None
+            }
+        });
+
+        // Determine final arr_param: only used if the body references it
+        let arr_param = if let Some(arr_name) = &arr_param_raw {
+            if arr_name != "_"
+                && body
+                    .statements
+                    .iter()
+                    .any(|s| Self::ast_stmt_uses_ident(arr_name, s))
+            {
+                arr_name.clone()
             } else {
                 "_".to_string()
             }
@@ -539,6 +638,28 @@ impl Lowerer {
                 }
             }
         }
+        // Restore var_types for reduce_idx param (third param of reduce/reduceRight)
+        if let Some(name) = saved_reduce_idx_name {
+            match saved_reduce_idx_var_type {
+                Some(old_ty) => {
+                    self.type_info.var_types.insert(name, old_ty);
+                }
+                None => {
+                    self.type_info.var_types.remove(&name);
+                }
+            }
+        }
+        // Restore var_types for arr param
+        if let Some(name) = saved_arr_name {
+            match saved_arr_var_type {
+                Some(old_ty) => {
+                    self.type_info.var_types.insert(name, old_ty);
+                }
+                None => {
+                    self.type_info.var_types.remove(&name);
+                }
+            }
+        }
         // Restore var_types for array-destructured callback params (k, v, etc.)
         for (name, old_type) in saved_destr_var_types {
             match old_type {
@@ -570,6 +691,9 @@ impl Lowerer {
             elem_param,
             has_idx_param,
             idx_param,
+            reduce_idx_param,
+            has_arr_param,
+            arr_param,
             ir_body,
             reduce_init,
         ))
@@ -614,8 +738,17 @@ impl Lowerer {
             })
             .unwrap_or(crate::zigir::types::CollectionKind::Array);
 
-        let (kind, elem_param, has_idx_param, idx_param, ir_body, reduce_init) =
-            self.parse_callback_inline(ce, kind, &elem_type, collection_kind.clone())?;
+        let (
+            kind,
+            elem_param,
+            has_idx_param,
+            idx_param,
+            reduce_idx_param,
+            has_arr_param,
+            arr_param,
+            ir_body,
+            reduce_init,
+        ) = self.parse_callback_inline(ce, kind, &elem_type, collection_kind.clone())?;
 
         Some(IrExpr::ArrayCallbackInline(Box::new(
             IrArrayCallbackInline {
@@ -627,6 +760,9 @@ impl Lowerer {
                 elem_param,
                 has_idx_param,
                 idx_param,
+                reduce_idx_param,
+                has_arr_param,
+                arr_param,
                 body: ir_body,
                 reduce_init,
             },
@@ -649,13 +785,22 @@ impl Lowerer {
         use crate::zigir::types::{IrArrayCallbackInline, IrExpr};
 
         let kind = Self::resolve_callback_kind(builtin)?;
-        let (kind, elem_param, has_idx_param, idx_param, ir_body, reduce_init) = self
-            .parse_callback_inline(
-                ce,
-                kind,
-                elem_type,
-                crate::zigir::types::CollectionKind::Array,
-            )?;
+        let (
+            kind,
+            elem_param,
+            has_idx_param,
+            idx_param,
+            reduce_idx_param,
+            has_arr_param,
+            arr_param,
+            ir_body,
+            reduce_init,
+        ) = self.parse_callback_inline(
+            ce,
+            kind,
+            elem_type,
+            crate::zigir::types::CollectionKind::Array,
+        )?;
 
         let chain_obj_name = self.name_mangler.next_name("__chain");
 
@@ -669,6 +814,9 @@ impl Lowerer {
                 elem_param,
                 has_idx_param,
                 idx_param,
+                reduce_idx_param,
+                has_arr_param,
+                arr_param,
                 body: ir_body,
                 reduce_init,
             },

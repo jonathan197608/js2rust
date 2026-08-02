@@ -1043,6 +1043,15 @@ pub struct IrArrayCallbackInline {
     /// The callback index parameter name (e.g., "i" from `(x, i) => ...`),
     /// or "_" if present but unused, or "" if no index param.
     pub idx_param: String,
+    /// For reduce/reduceRight: the callback index parameter name (3rd param).
+    /// None for non-reduce callbacks.
+    pub reduce_idx_param: Option<String>,
+    /// Whether the callback takes an array parameter (3rd param for non-reduce,
+    /// 4th param for reduce).
+    pub has_arr_param: bool,
+    /// The callback array parameter name (e.g., "a" from `(x, i, a) => ...`),
+    /// or "_" if present but unused, or "" if no array param.
+    pub arr_param: String,
     /// The callback body statements (already lowered to IR).
     /// For concise arrow bodies, this is a single ExpressionStatement.
     pub body: Vec<IrStmt>,

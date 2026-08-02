@@ -17,14 +17,126 @@ return a + b;
         "Expected temp variable in:\n{}",
         zig
     );
+}
+
+// ── Test: Array.reduce() with index parameter ───────
+
+#[test]
+fn test_reduce_callback_with_index() {
+    let js = r#"
+/**
+ * @returns {number}
+ */
+export function reduceWithIndex() {
+const arr = [10, 20, 30];
+return arr.reduce((acc, x, i) => acc + x * i, 0);
+}
+"#;
+    let zig = transpile_and_check(js, "test_reduce_callback_with_index");
+    // Must have a for-loop with index capture (0..)
     assert!(
-        zig.contains(".get(\"a\")"),
-        "Expected .get(\"a\") access in:\n{}",
+        zig.contains("0..) |"),
+        "Expected for-loop with index capture (0..) for reduce with index param:\n{}",
         zig
     );
+    // Must have @intCast for the index
     assert!(
-        zig.contains(".get(\"b\")"),
-        "Expected .get(\"b\") access in:\n{}",
+        zig.contains("@intCast"),
+        "Expected @intCast for reduce index param:\n{}",
+        zig
+    );
+}
+
+// ── Test: Array.reduce() with array parameter ───────
+
+#[test]
+fn test_reduce_callback_with_array() {
+    let js = r#"
+/**
+ * @returns {number}
+ */
+export function reduceWithArray() {
+const arr = [10, 20, 30];
+return arr.reduce((acc, x, i, a) => acc + a.length, 0);
+}
+"#;
+    let zig = transpile_and_check(js, "test_reduce_callback_with_array");
+    // Must have the array parameter bound to the receiver
+    assert!(
+        zig.contains("const a = ") && zig.contains(".items.len"),
+        "Expected array param binding and .items.len usage in:\n{}",
+        zig
+    );
+}
+
+// ── Test: Array.reduceRight() with index parameter ──
+
+#[test]
+fn test_reduce_right_callback_with_index() {
+    let js = r#"
+/**
+ * @returns {number}
+ */
+export function reduceRightWithIndex() {
+const arr = [10, 20, 30];
+return arr.reduceRight((acc, x, i) => acc + x * i, 0);
+}
+"#;
+    let zig = transpile_and_check(js, "test_reduce_right_callback_with_index");
+    // reduceRight uses a while loop, and @intCast binds the index
+    assert!(
+        zig.contains("@intCast"),
+        "Expected @intCast for reduceRight index param:\n{}",
+        zig
+    );
+    // Must have a while loop (reverse iteration)
+    assert!(
+        zig.contains("while"),
+        "Expected while loop for reduceRight:\n{}",
+        zig
+    );
+}
+
+// ── Test: forEach with array parameter ──────────────
+
+#[test]
+fn test_foreach_callback_with_array() {
+    let js = r#"
+export function forEachWithArray() {
+const arr = [1, 2, 3];
+let total = 0;
+arr.forEach((x, i, a) => { total += a.length; });
+return total;
+}
+"#;
+    let zig = transpile_and_check(js, "test_foreach_callback_with_array");
+    // Must have the array parameter bound
+    assert!(
+        zig.contains("const a = "),
+        "Expected array param binding in forEach:\n{}",
+        zig
+    );
+}
+
+// ── Test: map with array parameter ──────────────────
+
+#[test]
+fn test_map_callback_with_array() {
+    let js = r#"
+/**
+ * @returns {number}
+ */
+export function mapWithArray() {
+const arr = [1, 2, 3];
+const result = arr.map((x, i, a) => x + a.length);
+return result.items.len;
+}
+"#;
+    let zig = transpile_and_check(js, "test_map_callback_with_array");
+    // Must have the array parameter bound
+    assert!(
+        zig.contains("const a = "),
+        "Expected array param binding in map:\n{}",
         zig
     );
 }
@@ -1584,7 +1696,37 @@ return arr[1];
     );
 }
 
-// ── Test: Array.toSpliced() insert on JsAny array ──────────────
+// ── Test: Array destructure ASSIGNMENT with defaults on ArrayList ──
+// R50-Bug1: [a = 1, b = 2] = arr (assignment, not declaration) with
+// ArrayList source must use .items.len for bounds check, not .len.
+#[test]
+fn test_r50_destructure_assignment_arraylist_defaults() {
+    let js = r#"
+export function destructureAssignArrayList() {
+const arr = [10, 20];
+let a = 0;
+let b = 0;
+[a = 1, b = 2] = arr;
+return a + b;
+}
+"#;
+    let zig = transpile_and_check(js, "test_r50_destructure_assignment_arraylist_defaults");
+    // The bounds check must use .items.len (ArrayList), not .len (Slice)
+    assert!(
+        zig.contains(".items.len"),
+        "Expected '.items.len' for ArrayList bounds check in:\n{}",
+        zig
+    );
+    // Must NOT have a bare temp.len or _js_dst.len (without .items prefix)
+    // — that would indicate the old SliceLen bug is still present.
+    assert!(
+        !zig.contains("_js_dst_0.len)"),
+        "ArrayList bounds check must NOT use bare '.len' (should be '.items.len') in:\n{}",
+        zig
+    );
+}
+
+// ── Test: Array toSpliced() insert on JsAny array ──────────────
 
 #[test]
 fn test_emit_to_spliced_insert_jsany_array() {

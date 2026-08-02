@@ -77,6 +77,8 @@ impl Emitter {
                     &data.elem_param,
                     data.has_idx_param,
                     &data.idx_param,
+                    data.has_arr_param,
+                    &data.arr_param,
                     &data.body,
                 );
             }
@@ -99,6 +101,8 @@ impl Emitter {
         elem_param: &str,
         has_idx_param: bool,
         idx_param: &str,
+        has_arr_param: bool,
+        arr_param: &str,
         body: &[crate::zigir::types::IrStmt],
     ) {
         if let Some(b) = binding {
@@ -118,6 +122,10 @@ impl Emitter {
         }
         self.write("{\n");
         self.indent_push();
+        // Bind arr_param (third param: array reference) if present
+        if has_arr_param && !arr_param.is_empty() && arr_param != "_" {
+            self.writeln(&format!("const {} = {};", arr_param, receiver));
+        }
         for stmt in body {
             self.writeln("");
             self.emit_stmt(stmt);
@@ -150,6 +158,10 @@ impl Emitter {
         }
         if !data.idx_param.is_empty() && data.idx_param != "_" {
             self.writeln(&format!("const {} = entry.key_ptr.*;", data.idx_param));
+        }
+        // Bind arr_param (third param: Map reference) if present
+        if data.has_arr_param && !data.arr_param.is_empty() && data.arr_param != "_" {
+            self.writeln(&format!("const {} = {};", data.arr_param, receiver));
         }
         for stmt in body {
             self.emit_stmt(stmt);
@@ -185,6 +197,10 @@ impl Emitter {
         self.indent_push();
         if data.elem_param != "_" {
             self.writeln(&format!("const {} = entry.key_ptr.*;", data.elem_param));
+        }
+        // Bind arr_param (third param: Set reference) if present
+        if data.has_arr_param && !data.arr_param.is_empty() && data.arr_param != "_" {
+            self.writeln(&format!("const {} = {};", data.arr_param, receiver));
         }
         for stmt in body {
             self.emit_stmt(stmt);
@@ -227,6 +243,10 @@ impl Emitter {
         }
         self.write("{\n");
         self.indent_push();
+        // Bind arr_param (third param: array reference) if present
+        if data.has_arr_param && !data.arr_param.is_empty() && data.arr_param != "_" {
+            self.writeln(&format!("const {} = {};", data.arr_param, receiver));
+        }
         let blk_clone = blk.clone();
         let match_val = match_value.to_string();
         self.emit_callback_body(&data.body, |emitter, expr| {
@@ -280,6 +300,10 @@ impl Emitter {
         ));
         self.write("{\n");
         self.indent_push();
+        // Bind arr_param (third param: array reference) if present
+        if data.has_arr_param && !data.arr_param.is_empty() && data.arr_param != "_" {
+            self.writeln(&format!("const {} = {};", data.arr_param, receiver));
+        }
         let loop_elem_clone = loop_elem.clone();
         let var_clone = var.clone();
         self.emit_callback_body(&data.body, move |emitter, expr| {
@@ -325,6 +349,10 @@ impl Emitter {
             self.write("{\n");
         }
         self.indent_push();
+        // Bind arr_param (third param: array reference) if present
+        if data.has_arr_param && !data.arr_param.is_empty() && data.arr_param != "_" {
+            self.writeln(&format!("const {} = {};", data.arr_param, receiver));
+        }
         self.emit_callback_body(&data.body, |emitter, expr| {
             emitter.emit_if_break_pred(expr, &blk_clone, &elem_param, false);
         });
@@ -410,6 +438,10 @@ impl Emitter {
             ));
         }
         self.indent_push();
+        // Bind arr_param (third param: array reference) if present
+        if data.has_arr_param && !data.arr_param.is_empty() && data.arr_param != "_" {
+            self.writeln(&format!("const {} = {};", data.arr_param, receiver));
+        }
         self.emit_callback_body(&data.body, |emitter, expr| {
             emitter.emit_if_break_pred(expr, &blk_clone, &idx_name_clone, false);
         });
@@ -499,6 +531,10 @@ impl Emitter {
         ));
         self.write("{\n");
         self.indent_push();
+        // Bind arr_param (third param: array reference) if present
+        if data.has_arr_param && !data.arr_param.is_empty() && data.arr_param != "_" {
+            self.writeln(&format!("const {} = {};", data.arr_param, receiver));
+        }
         let var_clone = var.clone();
         let method_clone = method_name.to_string();
         let needs_jsany_wrap = matches!(data.elem_type, crate::types::ZigType::JsAny);
@@ -608,6 +644,7 @@ impl Emitter {
         // When the callback has only one param, elem_param IS the accumulator name
         // and must be bound to acc_name — we use a synthetic loop variable for the
         // element to avoid the name collision.
+        let needs_index = data.reduce_idx_param.is_some();
         let (loop_var, needs_acc_bind) = if !data.idx_param.is_empty() && data.idx_param != "_" {
             // Two-param callback: use idx_param as the loop variable (current element)
             (data.idx_param.clone(), true)
@@ -621,21 +658,33 @@ impl Emitter {
             (format!("_elem_{}", blk), false)
         };
 
+        // When the callback has a third param (index), we need the loop index.
+        // Use a synthetic index var and bind reduce_idx_param to it.
+        let synth_idx_var = format!("_ri_{}", blk);
+        let items_path = self.items_path(&receiver).to_string();
         if has_init {
-            self.write(&format!(
-                "for ({}{}) |{}| ",
-                receiver,
-                self.items_path(&receiver),
-                loop_var
-            ));
+            if needs_index {
+                self.write(&format!(
+                    "for ({}{}, 0..) |{}, {}| ",
+                    receiver, items_path, loop_var, synth_idx_var
+                ));
+            } else {
+                self.write(&format!("for ({}{}) |{}| ", receiver, items_path, loop_var));
+            }
         } else {
             // Skip index 0 (used as initial accumulator value)
-            self.write(&format!(
-                "for ({}{}[1..]) |{}| ",
-                receiver,
-                self.items_path(&receiver),
-                loop_var
-            ));
+            if needs_index {
+                // Start from index 1, so offset the synthetic index by 1
+                self.write(&format!(
+                    "for ({}{}[1..], 1..) |{}, {}| ",
+                    receiver, items_path, loop_var, synth_idx_var
+                ));
+            } else {
+                self.write(&format!(
+                    "for ({}{}[1..]) |{}| ",
+                    receiver, items_path, loop_var
+                ));
+            }
         }
         self.write("{\n");
         self.indent_push();
@@ -645,6 +694,26 @@ impl Emitter {
         // where elem_param is the accumulator and loop_var is synthetic)
         if needs_acc_bind && data.elem_param != "_" && data.elem_param != loop_var {
             self.writeln(&format!("const {} = {};", data.elem_param, acc_name));
+        }
+
+        // Bind reduce_idx_param (third param: currentIndex) if present
+        if let Some(ref ri_name) = data.reduce_idx_param {
+            self.writeln(&format!(
+                "const {}: i64 = @intCast({});",
+                ri_name, synth_idx_var
+            ));
+        }
+
+        // Bind arr_param (fourth param: array reference) if present
+        if data.has_arr_param && !data.arr_param.is_empty() && data.arr_param != "_" {
+            self.writeln(&format!("const {} = {};", data.arr_param, receiver));
+        }
+
+        // When using a synthetic loop variable (element not named by the callback),
+        // suppress Zig's "unused capture" error.
+        let is_synthetic_loop_var = loop_var.starts_with("_elem_");
+        if is_synthetic_loop_var {
+            self.writeln(&format!("_ = &{};", loop_var));
         }
 
         let acc_name_clone = acc_name.clone();
@@ -794,6 +863,27 @@ impl Emitter {
         // Bind elem_param to the accumulator when it differs from the loop variable
         if needs_acc_bind && data.elem_param != "_" && data.elem_param != loop_var {
             self.writeln(&format!("const {} = {};", data.elem_param, acc_name));
+        }
+
+        // Bind reduce_idx_param (third param: currentIndex) if present.
+        // For reduceRight, the loop variable (_i_N) is the current index.
+        if let Some(ref ri_name) = data.reduce_idx_param {
+            self.writeln(&format!(
+                "const {}: i64 = @intCast({});",
+                ri_name, loop_var_name
+            ));
+        }
+
+        // Bind arr_param (fourth param: array reference) if present
+        if data.has_arr_param && !data.arr_param.is_empty() && data.arr_param != "_" {
+            self.writeln(&format!("const {} = {};", data.arr_param, receiver));
+        }
+
+        // When using a synthetic loop variable (element not named by the callback),
+        // suppress Zig's "unused capture" error.
+        let is_synthetic_loop_var = loop_var.starts_with("_elem_");
+        if is_synthetic_loop_var {
+            self.writeln(&format!("_ = &{};", loop_var));
         }
 
         let acc_name_clone = acc_name.clone();

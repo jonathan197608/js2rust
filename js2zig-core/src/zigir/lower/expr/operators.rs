@@ -1180,13 +1180,20 @@ impl Lowerer {
 
                     // Wrap in bounds-check if default exists.
                     let final_value = if let Some(def) = &default_ir {
+                        // Use the correct FieldKind for the bounds check:
+                        // ArrayList → ArrayListLen (.items.len), Slice → SliceLen (.len).
+                        let len_kind = if is_arraylist {
+                            FieldKind::ArrayListLen
+                        } else {
+                            FieldKind::SliceLen
+                        };
                         IrExpr::Conditional {
                             cond: Box::new(IrExpr::Binary {
                                 op: BinOp::Gt,
                                 left: Box::new(IrExpr::FieldAccess {
                                     object: Box::new(temp_ident.clone()),
                                     field: "len".to_string(),
-                                    field_kind: FieldKind::SliceLen,
+                                    field_kind: len_kind,
                                 }),
                                 right: Box::new(IrExpr::IntLiteral(i as i64)),
                                 left_type: Some(ZigType::I64),
