@@ -792,6 +792,63 @@ impl Lowerer {
             }
             // BigInt /=: fall through to BigInt compound expansion below
         }
+        // <<= >>= &= |= ^= → expand into Assign + Binary (non-BigInt)
+        // JS bitwise/shift operators require ToInt32 semantics (32-bit signed
+        // integer wrapping), but Zig's i64 compound operators (&= |= ^= <<= >>=)
+        // operate on 64-bit values directly. This produces wrong results for
+        // values ≥ 2³² and causes Zig type errors when the shift amount is a
+        // runtime i64 (Zig requires u5/u6 for shift amounts).
+        // Expansion to Binary lets the emitter use the Int32-aware paths
+        // (emit_bitwise_operand_to_int32 + u5 shift masking).
+        if matches!(
+            ae.operator,
+            AssignmentOperator::ShiftLeft
+                | AssignmentOperator::ShiftRight
+                | AssignmentOperator::BitwiseAnd
+                | AssignmentOperator::BitwiseOR
+                | AssignmentOperator::BitwiseXOR
+        ) {
+            let target_type = self.infer_assign_target_type(&ae.left);
+            // BigInt compound is handled by the BigInt expansion below
+            if target_type != Some(ZigType::BigInt) {
+                let target = self.lower_assign_target(&ae.left);
+                // Only expand for targets where to_read_expr returns Some
+                if matches!(
+                    target,
+                    crate::zigir::types::IrAssignTarget::Member { .. }
+                        | crate::zigir::types::IrAssignTarget::Ident(_)
+                        | crate::zigir::types::IrAssignTarget::Index { .. }
+                ) {
+                    let value = Box::new(self.lower_expr(&ae.right));
+                    let (bind, target, base_expr) =
+                        self.maybe_bind_member_object_for_compound(target);
+                    let break_value = base_expr.clone();
+                    let bin_op = match ae.operator {
+                        AssignmentOperator::ShiftLeft => BinOp::Shl,
+                        AssignmentOperator::ShiftRight => BinOp::Shr,
+                        AssignmentOperator::BitwiseAnd => BinOp::BitAnd,
+                        AssignmentOperator::BitwiseOR => BinOp::BitOr,
+                        AssignmentOperator::BitwiseXOR => BinOp::BitXor,
+                        _ => unreachable!(),
+                    };
+                    let left_type = target_type.unwrap_or(ZigType::I64);
+                    let right_type = self.infer_expr_type(&ae.right).unwrap_or(ZigType::I64);
+                    let assign = IrExpr::Assign {
+                        op: AssignOp::Assign,
+                        target: Box::new(target),
+                        value: Box::new(IrExpr::Binary {
+                            op: bin_op,
+                            left: Box::new(base_expr),
+                            right: value,
+                            left_type: Some(left_type),
+                            right_type: Some(right_type),
+                        }),
+                    };
+                    return self.wrap_compound_assign(bind, assign, break_value);
+                }
+                // For unsupported targets, fall through to default path
+            }
+        }
         // &&= / ||= / ??= → expand into Assign + Logical
         // This reuses the Logical emitter's type-aware JsAny.from() wrapping,
         // avoiding type mismatches between comptime_int and JsAny branches.

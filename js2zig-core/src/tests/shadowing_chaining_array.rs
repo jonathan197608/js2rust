@@ -337,6 +337,10 @@ fn test_string_literal_index_inferred_type() {
 #[test]
 fn test_bit_assign_operators() {
     // <<= >>= &= |= ^= compound assignment
+    // R50-Bug4: These must be expanded to Binary with Int32 semantics,
+    // not emitted as Zig native &= |= etc. (which use 64-bit and wrong
+    // shift amount types). The expanded form uses @as(i32, @truncate(...))
+    // for ToInt32 conversion and @as(u5, @truncate(...)) for shift amounts.
     let js = r#"
         export function bitOps(x) {
             x <<= 2;
@@ -347,12 +351,65 @@ fn test_bit_assign_operators() {
             return x;
         }
     "#;
-    let zig = transpile_and_assert(js, "test_bit_assign_operators");
-    assert!(zig.contains("<<="), "Expected <<= in output");
-    assert!(zig.contains(">>="), "Expected >>= in output");
-    assert!(zig.contains("&="), "Expected &= in output");
-    assert!(zig.contains("|="), "Expected |= in output");
-    assert!(zig.contains("^="), "Expected ^= in output");
+    let zig = transpile_and_check(js, "test_bit_assign_operators");
+    // Should use Int32-aware expansion, NOT Zig native compound operators
+    assert!(
+        !zig.contains("<<="),
+        "Should not contain <<= (use Int32 expansion):\n{}",
+        zig
+    );
+    assert!(
+        !zig.contains(">>="),
+        "Should not contain >>= (use Int32 expansion):\n{}",
+        zig
+    );
+    assert!(
+        !zig.contains("&="),
+        "Should not contain &= (use Int32 expansion):\n{}",
+        zig
+    );
+    assert!(
+        !zig.contains("|="),
+        "Should not contain |= (use Int32 expansion):\n{}",
+        zig
+    );
+    assert!(
+        !zig.contains("^="),
+        "Should not contain ^= (use Int32 expansion):\n{}",
+        zig
+    );
+    // Should contain Int32 conversion (@as(i32, @truncate(...)))
+    assert!(
+        zig.contains("@as(i32, @truncate"),
+        "Expected Int32 truncation for bitwise ops:\n{}",
+        zig
+    );
+}
+
+#[test]
+fn test_bit_assign_runtime_shift() {
+    // R50-Bug4: Shift with runtime i64 shift amount.
+    // Zig i64 <<= requires u6, but JS shift amount is i64. The expansion
+    // must handle runtime variables as shift amounts via Int32 + u5.
+    let js = r#"
+        export function shiftTest(x, y) {
+            x <<= y;
+            return x;
+        }
+    "#;
+    let zig = transpile_and_check(js, "test_bit_assign_runtime_shift");
+    // Should NOT use Zig native <<= (would fail: i64 << i64 is a type error)
+    assert!(
+        !zig.contains("<<="),
+        "Should not use Zig native <<= with runtime shift amount:\n{}",
+        zig
+    );
+    // Should use Int32 + u5 expansion
+    assert!(
+        zig.contains("@as(u5, @truncate"),
+        "Expected u5 shift amount masking:\n{}",
+        zig
+    );
 }
 
 #[test]
