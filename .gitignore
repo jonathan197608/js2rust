@@ -20,3 +20,11 @@ failing*.txt
 
 # Agent temp directory
 .temp/
+
+# Temp build/debug files
+build_err.txt
+build_out.txt
+defender_status.txt
+lock_check.txt
+examples/test262-project/retry_build.sh
+examples/test262-project/run_zig_build.sh

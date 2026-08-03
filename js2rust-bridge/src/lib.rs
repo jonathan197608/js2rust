@@ -57,7 +57,11 @@ pub fn build() {
     let config = Js2rustConfig::from_manifest_dir();
     let manifest_dir =
         std::env::var("CARGO_MANIFEST_DIR").expect("CARGO_MANIFEST_DIR must be set by Cargo");
-    let cache_dir = PathBuf::from(&manifest_dir).join(".js2zig-cache");
+    // Allow overriding the cache directory via env var (useful when the default
+    // .js2zig-cache has locked files from a previous build).
+    let cache_dir = std::env::var("JS2RUST_CACHE_DIR")
+        .map(PathBuf::from)
+        .unwrap_or_else(|_| PathBuf::from(&manifest_dir).join(".js2zig-cache"));
 
     // All JS files are resolved from config (js_dir + js_files)
     let js_dir: PathBuf = PathBuf::from(&manifest_dir).join(&config.project.js_dir);
@@ -158,7 +162,9 @@ pub fn build() {
 pub fn link() {
     let manifest_dir =
         std::env::var("CARGO_MANIFEST_DIR").expect("CARGO_MANIFEST_DIR must be set by Cargo");
-    let cache_dir = PathBuf::from(&manifest_dir).join(".js2zig-cache");
+    let cache_dir = std::env::var("JS2RUST_CACHE_DIR")
+        .map(PathBuf::from)
+        .unwrap_or_else(|_| PathBuf::from(&manifest_dir).join(".js2zig-cache"));
 
     // Re-run when compiled libraries appear or change.
     if cache_dir.exists() {

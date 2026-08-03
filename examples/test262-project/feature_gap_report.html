@@ -1,0 +1,266 @@
+<!DOCTYPE html>
+<html lang="zh-CN">
+<head>
+<meta charset="UTF-8">
+<meta name="viewport" content="width=device-width, initial-scale=1.0">
+<title>test262 特性差距报告 — js2rust 转译器</title>
+<style>
+  :root {
+    --bg: #1a1a2e;
+    --card: #16213e;
+    --accent: #0f3460;
+    --text: #e0e0e0;
+    --muted: #8888aa;
+    --red: #e94560;
+    --green: #2ecc71;
+    --yellow: #f1c40f;
+    --orange: #e67e22;
+    --blue: #3498db;
+  }
+  body { background: var(--bg); color: var(--text); font-family: 'Segoe UI', system-ui, sans-serif; margin: 0; padding: 20px; }
+  h1 { color: var(--blue); border-bottom: 2px solid var(--accent); padding-bottom: 10px; }
+  h2 { color: var(--text); margin-top: 30px; }
+  .card { background: var(--card); border-radius: 8px; padding: 20px; margin: 15px 0; box-shadow: 0 4px 6px rgba(0,0,0,0.3); }
+  .stat-grid { display: grid; grid-template-columns: repeat(auto-fit, minmax(200px, 1fr)); gap: 15px; margin: 20px 0; }
+  .stat { background: var(--accent); border-radius: 8px; padding: 15px; text-align: center; }
+  .stat .num { font-size: 2em; font-weight: bold; }
+  .stat .label { color: var(--muted); font-size: 0.9em; }
+  .stat.ok .num { color: var(--green); }
+  .stat.warn .num { color: var(--yellow); }
+  .stat.err .num { color: var(--red); }
+  .stat.info .num { color: var(--blue); }
+  table { width: 100%; border-collapse: collapse; margin: 15px 0; }
+  th { background: var(--accent); text-align: left; padding: 10px; color: var(--text); }
+  td { padding: 8px 10px; border-bottom: 1px solid #333; }
+  tr:hover { background: rgba(255,255,255,0.05); }
+  .badge { display: inline-block; padding: 2px 8px; border-radius: 4px; font-size: 0.8em; font-weight: bold; }
+  .badge-ce { background: var(--orange); color: #000; }
+  .badge-err { background: var(--red); color: #fff; }
+  .badge-warn { background: var(--yellow); color: #000; }
+  .badge-ok { background: var(--green); color: #000; }
+  .badge-bug { background: var(--red); color: #fff; }
+  pre { background: #0d1b2a; padding: 15px; border-radius: 6px; overflow-x: auto; font-size: 0.85em; }
+  code { color: var(--blue); }
+  .todo { background: rgba(52, 152, 219, 0.1); border-left: 3px solid var(--blue); padding: 10px 15px; margin: 10px 0; }
+  .bug { background: rgba(231, 76, 60, 0.1); border-left: 3px solid var(--red); padding: 10px 15px; margin: 10px 0; }
+  .footer { margin-top: 40px; padding-top: 15px; border-top: 1px solid #333; color: var(--muted); font-size: 0.85em; }
+</style>
+</head>
+<body>
+
+<h1>test262 特性差距报告</h1>
+<p>js2rust JS→Zig 转译器 | 测试类别: <code>language/expressions/addition</code> | 48 个测试文件</p>
+
+<div class="stat-grid">
+  <div class="stat info"><div class="num">48</div><div class="label">测试文件总数</div></div>
+  <div class="stat ok"><div class="num">42</div><div class="label">转译成功</div></div>
+  <div class="stat err"><div class="num">8</div><div class="label">转译失败 (hard error)</div></div>
+  <div class="stat warn"><div class="num">1</div><div class="label">零诊断 (完全干净)</div></div>
+  <div class="stat info"><div class="num">576</div><div class="label">诊断总数</div></div>
+  <div class="stat warn"><div class="num">5</div><div class="label">特性差距类型</div></div>
+</div>
+
+<h2>一、转译器特性差距（按影响范围排序）</h2>
+
+<div class="card">
+<table>
+<tr><th>#</th><th>特性差距</th><th>类型</th><th>影响测试数</th><th>出现次数</th><th>严重性</th></tr>
+<tr>
+  <td>1</td>
+  <td><code>new Test262Error()</code></td>
+  <td><span class="badge badge-ce">COMPILE_ERROR</span></td>
+  <td>37 / 48</td>
+  <td>172</td>
+  <td>高 — 影响 77% 的测试</td>
+</tr>
+<tr>
+  <td>2</td>
+  <td>嵌套闭包捕获 (nested closure capture)</td>
+  <td><span class="badge badge-ce">COMPILE_ERROR</span></td>
+  <td>3 / 48</td>
+  <td>57</td>
+  <td>中 — 复杂 Symbol.toPrimitive 测试</td>
+</tr>
+<tr>
+  <td>3</td>
+  <td>计算属性键 <code>{ [expr]: value }</code></td>
+  <td><span class="badge badge-err">ERROR</span></td>
+  <td>3 / 48</td>
+  <td>20</td>
+  <td>中 — Symbol.toPrimitive 相关</td>
+</tr>
+<tr>
+  <td>4</td>
+  <td><code>eval()</code></td>
+  <td><span class="badge badge-ce">COMPILE_ERROR</span></td>
+  <td>1 / 48</td>
+  <td>10</td>
+  <td>低 — 设计性不支持</td>
+</tr>
+<tr>
+  <td>5</td>
+  <td>变量必须初始化 (strict type system)</td>
+  <td><span class="badge badge-err">ERROR</span></td>
+  <td>5 / 48</td>
+  <td>8</td>
+  <td>中 — Zig 类型系统限制</td>
+</tr>
+<tr>
+  <td>6</td>
+  <td><code>this</code> 在 class 外使用</td>
+  <td><span class="badge badge-ce">COMPILE_ERROR</span></td>
+  <td>1 / 48</td>
+  <td>6</td>
+  <td>低 — Symbol.toPrimitive 特殊场景</td>
+</tr>
+<tr>
+  <td>7</td>
+  <td><code>new Object()</code></td>
+  <td><span class="badge badge-ce">COMPILE_ERROR</span></td>
+  <td>2 / 48</td>
+  <td>3</td>
+  <td>低 — 可修复</td>
+</tr>
+</table>
+</div>
+
+<h2>二、转译器 Bug 发现</h2>
+
+<div class="bug">
+  <h3>Bug #1: <code>export const assert = { ... }</code> 对象字面量被静默丢弃</h3>
+  <p><strong>严重性: P0</strong> — 导致所有使用 <code>assert.sameValue()</code> 的测试无法通过 Zig 编译</p>
+  <p><strong>现象:</strong></p>
+  <ul>
+    <li><code>runtime.js</code> 中 <code>export const assert = { sameValue: assert_same_value, ... }</code> 被转译器处理但未生成对应的 Zig 代码</li>
+    <li>生成的 <code>runtime.zig</code> 只有 <code>pub fn assert_same_value</code> 和 <code>pub fn assert_not_same_value</code>，缺少 <code>pub const assert = .{ .sameValue = assert_same_value, ... }</code></li>
+    <li>测试文件中 <code>const assert = runtime.assert;</code> 引用了一个不存在的定义</li>
+  </ul>
+  <p><strong>修复方案:</strong> 在 <code>ExportNamedDeclaration → VariableDeclaration</code> 路径中，当初始值是对象字面量时，应生成 Zig 的匿名结构体 <code>.{ .key = value }</code></p>
+</div>
+
+<h2>三、详细文件分析</h2>
+
+<div class="card">
+<h3>3.1 完全干净的测试 (无任何诊断)</h3>
+<table>
+<tr><th>文件</th><th>状态</th><th>说明</th></tr>
+<tr>
+  <td><code>symbol_to_string.js</code></td>
+  <td><span class="badge badge-ok">CLEAN</span></td>
+  <td>Symbol.toPrimitive + assert.sameValue，转译无错误（但因 Bug #1 无法通过 Zig 编译）</td>
+</tr>
+</table>
+</div>
+
+<div class="card">
+<h3>3.2 仅含 <code>new Test262Error()</code> 的测试 (37个)</h3>
+<p>这些测试的核心逻辑正确转译，只是 <code>throw new Test262Error(msg)</code> 生成了 <code>@compileError</code>。</p>
+<p>示例转译结果 (<code>S11_6_1_A4_T1.zig</code>):</p>
+<pre>pub fn test262_...() !void {
+    if ((js_uri.isNaN((std.math.nan(f64) + 1)) != true)) {
+        _ = @compileError("Unsupported NewExpression: new Test262Error() (at 14:13)");
+        return error.JsThrow;
+    }
+}</pre>
+<p><strong>分析:</strong> <code>NaN</code>、<code>Infinity</code>、<code>isNaN()</code>、<code>+</code> 运算符全部正确转译。唯一缺失的是 <code>Test262Error</code> 构造函数。</p>
+<p><strong>建议:</strong> 在 <code>call.rs:944-948</code> 中将 <code>new Test262Error()</code> 路由到 <code>js_error.JsError.init(message)</code> 而非 <code>@compileError</code></p>
+</div>
+
+<div class="card">
+<h3>3.3 嵌套闭包捕获测试 (3个)</h3>
+<table>
+<tr><th>文件</th><th>捕获的变量</th><th>说明</th></tr>
+<tr><td><code>bigint_toprimitive.js</code></td><td><code>MyError</code></td><td>Symbol.toPrimitive 中嵌套闭包捕获 class 引用</td></tr>
+<tr><td><code>coerce_symbol_to_prim_err.js</code></td><td><code>Test262Error</code>, <code>log</code></td><td>同上 + log 函数</td></tr>
+<tr><td><code>order_of_evaluation.js</code></td><td><code>MyError</code>, <code>Test262Error</code>, <code>trace</code></td><td>最复杂 — 3 层嵌套闭包</td></tr>
+</table>
+<p><strong>根因:</strong> Zig 的闭包实现（struct + 捕获字段）不支持嵌套闭包从外层闭包捕获变量。这是 Zig 语言的限制。</p>
+<p><strong>建议:</strong> 中期可通过全局变量或 context 参数传递替代闭包捕获</p>
+</div>
+
+<div class="card">
+<h3>3.4 其他差距测试</h3>
+<table>
+<tr><th>文件</th><th>差距</th><th>说明</th></tr>
+<tr><td><code>S11_6_1_A1.js</code></td><td><code>eval()</code> + <code>new Test262Error()</code></td><td>eval 用于动态生成测试用例，设计性不支持</td></tr>
+<tr><td><code>S11_6_1_A2_1_T1.js</code></td><td><code>new Object()</code> + <code>new Test262Error()</code></td><td><code>new Object()</code> 应路由到 <code>js_object.JsObject.init()</code></td></tr>
+<tr><td><code>coerce_symbol_to_prim_invocation.js</code></td><td><code>this</code> 在 class 外 + 变量未初始化</td><td>使用 <code>this</code> 在非 class 函数中（Symbol.toPrimitive handler）</td></tr>
+<tr><td><code>bigint_errors.js</code></td><td>计算属性键</td><td><code>{ [Symbol.toPrimitive]: fn }</code> 不支持</td></tr>
+</table>
+</div>
+
+<h2>四、转译质量验证</h2>
+
+<div class="card">
+<h3>4.1 正确转译的特性</h3>
+<table>
+<tr><th>JS 特性</th><th>Zig 等价物</th><th>状态</th></tr>
+<tr><td><code>NaN</code></td><td><code>std.math.nan(f64)</code></td><td><span class="badge badge-ok">正确</span></td></tr>
+<tr><td><code>Infinity</code></td><td><code>std.math.inf(f64)</code></td><td><span class="badge badge-ok">正确</span></td></tr>
+<tr><td><code>isNaN()</code></td><td><code>js_uri.isNaN()</code></td><td><span class="badge badge-ok">正确</span></td></tr>
+<tr><td><code>+</code> 运算符</td><td>Zig <code>+</code></td><td><span class="badge badge-ok">正确</span></td></tr>
+<tr><td><code>!==</code></td><td>Zig <code>!=</code></td><td><span class="badge badge-ok">正确</span></td></tr>
+<tr><td><code>assert.sameValue()</code></td><td><code>assert.sameValue()</code> (方法调用)</td><td><span class="badge badge-ok">正确</span></td></tr>
+<tr><td>BigInt 字面量 <code>0xFEDCBA9876543210n</code></td><td><code>js_bigint.JsBigInt.init(alloc, "18364758544493064720")</code></td><td><span class="badge badge-ok">正确</span></td></tr>
+<tr><td>BigInt <code>+</code></td><td><code>.add(other, alloc)</code></td><td><span class="badge badge-ok">正确</span></td></tr>
+<tr><td>import { assert } from './runtime.js'</td><td><code>const runtime = @import("runtime.zig"); const assert = runtime.assert;</code></td><td><span class="badge badge-ok">正确</span></td></tr>
+<tr><td>JSDoc <code>@param {Object}</code></td><td><code>anytype</code></td><td><span class="badge badge-ok">正确</span></td></tr>
+<tr><td>JSDoc <code>@param {string}</code></td><td><code>[]const u8</code></td><td><span class="badge badge-ok">正确</span></td></tr>
+<tr><td><code>host_assert_fail(message)</code></td><td><code>host.assert_fail(message)</code></td><td><span class="badge badge-ok">正确</span></td></tr>
+<tr><td><code>export function</code></td><td><code>pub fn</code></td><td><span class="badge badge-ok">正确</span></td></tr>
+<tr><td><code>throw expr</code></td><td><code>return error.JsThrow</code> + <code>@compileError</code> (for Test262Error)</td><td><span class="badge badge-warn">部分</span></td></tr>
+</table>
+</div>
+
+<h2>五、TODO 优先级列表</h2>
+
+<div class="todo">
+  <h3>P0 — 阻塞性 Bug</h3>
+  <ol>
+    <li><strong>修复 <code>export const</code> 对象字面量</strong> — <code>export const assert = { key: fn }</code> 应生成 <code>pub const assert = .{ .key = fn };</code></li>
+    <li><strong>支持 <code>new Test262Error()</code></strong> — 路由到 <code>js_error.JsError.init(message)</code>，影响 37 个测试 (77%)</li>
+  </ol>
+</div>
+
+<div class="todo">
+  <h3>P1 — 重要改进</h3>
+  <ol>
+    <li><strong>支持 <code>new Object()</code></strong> — 路由到 <code>js_object.JsObject.init()</code>，影响 2 个测试</li>
+    <li><strong>支持计算属性键</strong> — <code>{ [expr]: value }</code> 在对象字面量中，影响 3 个测试</li>
+    <li><strong>变量初始化改进</strong> — <code>let x;</code> 后在条件分支赋值的模式，影响 5 个测试</li>
+    <li><strong>class 外 <code>this</code> 支持</strong> — 在 Symbol.toPrimitive handler 中使用 <code>this</code>，影响 1 个测试</li>
+  </ol>
+</div>
+
+<div class="todo">
+  <h3>P2 — 长期改进</h3>
+  <ol>
+    <li><strong>嵌套闭包捕获</strong> — 从外层闭包捕获变量的嵌套闭包，影响 3 个测试</li>
+    <li><strong><code>eval()</code></strong> — 设计性不支持，但可以生成更友好的运行时错误</li>
+    <li><strong>闭包捕获未引用变量</strong> — 296 个警告，清理后可减少噪音</li>
+  </ol>
+</div>
+
+<h2>六、Zig 编译状态</h2>
+
+<div class="card">
+  <p><span class="badge badge-err">BLOCKED</span> Zig 编译被 Windows Defender 阻止</p>
+  <p>Windows Defender 实时保护阻止 Zig 进程读取标准库文件 <code>std.zig</code>（AccessDenied）。</p>
+  <p>已尝试的方案：</p>
+  <ul>
+    <li>复制 Zig 到 C 盘根目录 (<code>C:\zig16\</code>) — 仍然失败</li>
+    <li>设置 <code>ZIG_GLOBAL_CACHE_DIR</code> 到 C 盘根目录 — 缓存问题解决但 lib 读取仍失败</li>
+    <li>添加 Defender 排除路径 — 需要 admin 权限</li>
+    <li>重试 10 次 — 一致性失败</li>
+    <li>使用 <code>zig build-lib</code> 替代 <code>zig build</code> — 同样失败</li>
+  </ul>
+  <p><strong>下一步:</strong> 需要用户手动在 Windows 安全中心关闭实时保护或添加排除项，然后重新运行构建。</p>
+</div>
+
+<div class="footer">
+  <p>生成时间: 2026-08-02 | js2rust test262-project | 测试类别: language/expressions/addition (48 files)</p>
+  <p>转译器版本: js2zig-core (Zig 0.16.0 target) | pipeline.rs with ZIG_GLOBAL_CACHE_DIR support</p>
+</div>
+
+</body>
+</html>

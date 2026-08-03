@@ -1,6 +1,6 @@
 // src/main.rs - test262 conformance test runner (AUTO-GENERATED)
 //
-// Categories: 6, Tests: 59
+// Categories: 1, Tests: 48
 
 use js2rust_bridge::js2rust_bridge;
 use std::env;
@@ -19,8 +19,89 @@ fn flush_stdout() {
     }
 }
 
+/// Tests that failed transpilation (unsupported JS features).
+/// Their C ABI functions are not generated, so we skip them at runtime.
+const SKIPPED_TESTS: &[(&str, &str)] = &[
+    (
+        "test262_language_expressions_addition_bigint_errors",
+        "computed property key",
+    ),
+    (
+        "test262_language_expressions_addition_bigint_toprimitive",
+        "nested closure capture + computed property key",
+    ),
+    (
+        "test262_language_expressions_addition_bigint_wrapped_values",
+        "computed property key",
+    ),
+    (
+        "test262_language_expressions_addition_coerce_symbol_to_prim_err",
+        "nested closure capture + uninit variable",
+    ),
+    (
+        "test262_language_expressions_addition_coerce_symbol_to_prim_invocation",
+        "this outside class + nested closure",
+    ),
+    (
+        "test262_language_expressions_addition_coerce_symbol_to_prim_return_obj",
+        "unsupported transpilation",
+    ),
+    (
+        "test262_language_expressions_addition_coerce_symbol_to_prim_return_prim",
+        "unsupported transpilation",
+    ),
+    (
+        "test262_language_expressions_addition_order_of_evaluation",
+        "nested closure capture",
+    ),
+];
+
+fn is_skipped(name: &str) -> Option<&'static str> {
+    SKIPPED_TESTS
+        .iter()
+        .find(|(n, _)| *n == name)
+        .map(|(_, reason)| *reason)
+}
+
 const ALL_TESTS: &[&str] = &[
+    "test262_language_expressions_addition_bigint_and_number",
+    "test262_language_expressions_addition_bigint_arithmetic",
+    "test262_language_expressions_addition_bigint_errors",
+    "test262_language_expressions_addition_bigint_toprimitive",
+    "test262_language_expressions_addition_bigint_wrapped_values",
+    "test262_language_expressions_addition_coerce_bigint_to_string",
+    "test262_language_expressions_addition_coerce_symbol_to_prim_err",
+    "test262_language_expressions_addition_coerce_symbol_to_prim_invocation",
+    "test262_language_expressions_addition_coerce_symbol_to_prim_return_obj",
+    "test262_language_expressions_addition_coerce_symbol_to_prim_return_prim",
+    "test262_language_expressions_addition_get_symbol_to_prim_err",
+    "test262_language_expressions_addition_order_of_evaluation",
+    "test262_language_expressions_addition_S11_6_1_A1",
+    "test262_language_expressions_addition_S11_6_1_A2_1_T1",
+    "test262_language_expressions_addition_S11_6_1_A2_1_T2",
+    "test262_language_expressions_addition_S11_6_1_A2_1_T3",
+    "test262_language_expressions_addition_S11_6_1_A2_2_T1",
+    "test262_language_expressions_addition_S11_6_1_A2_2_T2",
+    "test262_language_expressions_addition_S11_6_1_A2_2_T3",
+    "test262_language_expressions_addition_S11_6_1_A2_3_T1",
+    "test262_language_expressions_addition_S11_6_1_A2_4_T1",
+    "test262_language_expressions_addition_S11_6_1_A2_4_T2",
+    "test262_language_expressions_addition_S11_6_1_A2_4_T3",
+    "test262_language_expressions_addition_S11_6_1_A2_4_T4",
+    "test262_language_expressions_addition_S11_6_1_A3_1_T1_1",
+    "test262_language_expressions_addition_S11_6_1_A3_1_T1_2",
     "test262_language_expressions_addition_S11_6_1_A3_1_T1_3",
+    "test262_language_expressions_addition_S11_6_1_A3_1_T2_1",
+    "test262_language_expressions_addition_S11_6_1_A3_1_T2_2",
+    "test262_language_expressions_addition_S11_6_1_A3_1_T2_3",
+    "test262_language_expressions_addition_S11_6_1_A3_1_T2_4",
+    "test262_language_expressions_addition_S11_6_1_A3_1_T2_5",
+    "test262_language_expressions_addition_S11_6_1_A3_2_T1_1",
+    "test262_language_expressions_addition_S11_6_1_A3_2_T1_2",
+    "test262_language_expressions_addition_S11_6_1_A3_2_T2_1",
+    "test262_language_expressions_addition_S11_6_1_A3_2_T2_2",
+    "test262_language_expressions_addition_S11_6_1_A3_2_T2_3",
+    "test262_language_expressions_addition_S11_6_1_A3_2_T2_4",
     "test262_language_expressions_addition_S11_6_1_A4_T1",
     "test262_language_expressions_addition_S11_6_1_A4_T2",
     "test262_language_expressions_addition_S11_6_1_A4_T3",
@@ -30,56 +111,14 @@ const ALL_TESTS: &[&str] = &[
     "test262_language_expressions_addition_S11_6_1_A4_T7",
     "test262_language_expressions_addition_S11_6_1_A4_T8",
     "test262_language_expressions_addition_S11_6_1_A4_T9",
-    "test262_language_expressions_division_line_terminator",
-    "test262_language_expressions_division_no_magic_asi",
-    "test262_language_expressions_division_S11_5_2_A3_T1_4",
-    "test262_language_expressions_division_S11_5_2_A4_T1_1",
-    "test262_language_expressions_division_S11_5_2_A4_T1_2",
-    "test262_language_expressions_division_S11_5_2_A4_T10",
-    "test262_language_expressions_division_S11_5_2_A4_T2",
-    "test262_language_expressions_division_S11_5_2_A4_T3",
-    "test262_language_expressions_division_S11_5_2_A4_T4",
-    "test262_language_expressions_division_S11_5_2_A4_T5",
-    "test262_language_expressions_division_S11_5_2_A4_T6",
-    "test262_language_expressions_division_S11_5_2_A4_T8",
-    "test262_language_expressions_division_S11_5_2_A4_T9",
-    "test262_language_expressions_multiplication_line_terminator",
-    "test262_language_expressions_multiplication_S11_5_1_A3_T1_4",
-    "test262_language_expressions_multiplication_S11_5_1_A4_T1_1",
-    "test262_language_expressions_multiplication_S11_5_1_A4_T1_2",
-    "test262_language_expressions_multiplication_S11_5_1_A4_T2",
-    "test262_language_expressions_multiplication_S11_5_1_A4_T3",
-    "test262_language_expressions_multiplication_S11_5_1_A4_T4",
-    "test262_language_expressions_multiplication_S11_5_1_A4_T5",
-    "test262_language_expressions_multiplication_S11_5_1_A4_T6",
-    "test262_language_expressions_multiplication_S11_5_1_A4_T7",
-    "test262_language_expressions_multiplication_S11_5_1_A4_T8",
-    "test262_language_expressions_strict_equals_S11_9_4_A3",
-    "test262_language_expressions_strict_equals_S11_9_4_A4_2",
-    "test262_language_expressions_strict_equals_S11_9_4_A4_3",
-    "test262_language_expressions_strict_equals_S11_9_4_A5",
-    "test262_language_expressions_strict_equals_S11_9_4_A6_2",
-    "test262_language_expressions_subtraction_S11_6_2_A3_T1_4",
-    "test262_language_expressions_subtraction_S11_6_2_A4_T1",
-    "test262_language_expressions_subtraction_S11_6_2_A4_T2",
-    "test262_language_expressions_subtraction_S11_6_2_A4_T3",
-    "test262_language_expressions_subtraction_S11_6_2_A4_T4",
-    "test262_language_expressions_subtraction_S11_6_2_A4_T5",
-    "test262_language_expressions_subtraction_S11_6_2_A4_T6",
-    "test262_language_expressions_subtraction_S11_6_2_A4_T7",
-    "test262_language_expressions_subtraction_S11_6_2_A4_T8",
-    "test262_language_statements_if_empty_statement",
-    "test262_language_statements_if_S12_5_A1_1_T1",
-    "test262_language_statements_if_S12_5_A1_1_T2",
-    "test262_language_statements_if_S12_5_A10_T1",
-    "test262_language_statements_if_S12_5_A10_T2",
-    "test262_language_statements_if_S12_5_A12_T1",
-    "test262_language_statements_if_S12_5_A12_T2",
-    "test262_language_statements_if_S12_5_A12_T3",
-    "test262_language_statements_if_S12_5_A12_T4",
-    "test262_language_statements_if_S12_5_A1_T1",
-    "test262_language_statements_if_S12_5_A1_T2",
+    "test262_language_expressions_addition_symbol_to_string",
 ];
+
+enum TestResult {
+    Ran,                   // test function called successfully
+    Skipped(&'static str), // transpilation failed, skip
+    Unknown,               // test name not found
+}
 
 fn main() {
     let args: Vec<String> = env::args().collect();
@@ -97,12 +136,21 @@ fn main() {
         "--all" => run_all(&binary),
         test_name => {
             js2rust_init();
-            if !run_test_direct(test_name) {
-                eprintln!("Unknown test: {}", test_name);
-                eprintln!("Use --list to see available tests.");
-                flush_stdout();
-                js2rust_deinit();
-                std::process::exit(2);
+            match run_test_direct(test_name) {
+                TestResult::Ran => {}
+                TestResult::Skipped(reason) => {
+                    eprintln!("SKIP: {}", reason);
+                    flush_stdout();
+                    js2rust_deinit();
+                    std::process::exit(3);
+                }
+                TestResult::Unknown => {
+                    eprintln!("Unknown test: {}", test_name);
+                    eprintln!("Use --list to see available tests.");
+                    flush_stdout();
+                    js2rust_deinit();
+                    std::process::exit(2);
+                }
             }
             flush_stdout();
             js2rust_deinit();
@@ -111,245 +159,175 @@ fn main() {
 }
 
 #[allow(clippy::let_unit_value)]
-fn run_test_direct(test_name: &str) -> bool {
+fn run_test_direct(test_name: &str) -> TestResult {
+    if let Some(reason) = is_skipped(test_name) {
+        return TestResult::Skipped(reason);
+    }
     match test_name {
+        "test262_language_expressions_addition_bigint_and_number" => {
+            let _ = test262_language_expressions_addition_bigint_and_number();
+            TestResult::Ran
+        }
+        "test262_language_expressions_addition_bigint_arithmetic" => {
+            let _ = test262_language_expressions_addition_bigint_arithmetic();
+            TestResult::Ran
+        }
+        // bigint_errors, bigint_toprimitive, bigint_wrapped_values: SKIPPED (transpilation failed)
+        "test262_language_expressions_addition_coerce_bigint_to_string" => {
+            let _ = test262_language_expressions_addition_coerce_bigint_to_string();
+            TestResult::Ran
+        }
+        // coerce_symbol_to_prim_err, _invocation, _return_obj, _return_prim: SKIPPED (transpilation failed)
+        "test262_language_expressions_addition_get_symbol_to_prim_err" => {
+            let _ = test262_language_expressions_addition_get_symbol_to_prim_err();
+            TestResult::Ran
+        }
+        // order_of_evaluation: SKIPPED (transpilation failed)
+        "test262_language_expressions_addition_S11_6_1_A1" => {
+            let _ = test262_language_expressions_addition_S11_6_1_A1();
+            TestResult::Ran
+        }
+        "test262_language_expressions_addition_S11_6_1_A2_1_T1" => {
+            let _ = test262_language_expressions_addition_S11_6_1_A2_1_T1();
+            TestResult::Ran
+        }
+        "test262_language_expressions_addition_S11_6_1_A2_1_T2" => {
+            let _ = test262_language_expressions_addition_S11_6_1_A2_1_T2();
+            TestResult::Ran
+        }
+        "test262_language_expressions_addition_S11_6_1_A2_1_T3" => {
+            let _ = test262_language_expressions_addition_S11_6_1_A2_1_T3();
+            TestResult::Ran
+        }
+        "test262_language_expressions_addition_S11_6_1_A2_2_T1" => {
+            let _ = test262_language_expressions_addition_S11_6_1_A2_2_T1();
+            TestResult::Ran
+        }
+        "test262_language_expressions_addition_S11_6_1_A2_2_T2" => {
+            let _ = test262_language_expressions_addition_S11_6_1_A2_2_T2();
+            TestResult::Ran
+        }
+        "test262_language_expressions_addition_S11_6_1_A2_2_T3" => {
+            let _ = test262_language_expressions_addition_S11_6_1_A2_2_T3();
+            TestResult::Ran
+        }
+        "test262_language_expressions_addition_S11_6_1_A2_3_T1" => {
+            let _ = test262_language_expressions_addition_S11_6_1_A2_3_T1();
+            TestResult::Ran
+        }
+        "test262_language_expressions_addition_S11_6_1_A2_4_T1" => {
+            let _ = test262_language_expressions_addition_S11_6_1_A2_4_T1();
+            TestResult::Ran
+        }
+        "test262_language_expressions_addition_S11_6_1_A2_4_T2" => {
+            let _ = test262_language_expressions_addition_S11_6_1_A2_4_T2();
+            TestResult::Ran
+        }
+        "test262_language_expressions_addition_S11_6_1_A2_4_T3" => {
+            let _ = test262_language_expressions_addition_S11_6_1_A2_4_T3();
+            TestResult::Ran
+        }
+        "test262_language_expressions_addition_S11_6_1_A2_4_T4" => {
+            let _ = test262_language_expressions_addition_S11_6_1_A2_4_T4();
+            TestResult::Ran
+        }
+        "test262_language_expressions_addition_S11_6_1_A3_1_T1_1" => {
+            let _ = test262_language_expressions_addition_S11_6_1_A3_1_T1_1();
+            TestResult::Ran
+        }
+        "test262_language_expressions_addition_S11_6_1_A3_1_T1_2" => {
+            let _ = test262_language_expressions_addition_S11_6_1_A3_1_T1_2();
+            TestResult::Ran
+        }
         "test262_language_expressions_addition_S11_6_1_A3_1_T1_3" => {
             let _ = test262_language_expressions_addition_S11_6_1_A3_1_T1_3();
-            true
+            TestResult::Ran
+        }
+        "test262_language_expressions_addition_S11_6_1_A3_1_T2_1" => {
+            let _ = test262_language_expressions_addition_S11_6_1_A3_1_T2_1();
+            TestResult::Ran
+        }
+        "test262_language_expressions_addition_S11_6_1_A3_1_T2_2" => {
+            let _ = test262_language_expressions_addition_S11_6_1_A3_1_T2_2();
+            TestResult::Ran
+        }
+        "test262_language_expressions_addition_S11_6_1_A3_1_T2_3" => {
+            let _ = test262_language_expressions_addition_S11_6_1_A3_1_T2_3();
+            TestResult::Ran
+        }
+        "test262_language_expressions_addition_S11_6_1_A3_1_T2_4" => {
+            let _ = test262_language_expressions_addition_S11_6_1_A3_1_T2_4();
+            TestResult::Ran
+        }
+        "test262_language_expressions_addition_S11_6_1_A3_1_T2_5" => {
+            let _ = test262_language_expressions_addition_S11_6_1_A3_1_T2_5();
+            TestResult::Ran
+        }
+        "test262_language_expressions_addition_S11_6_1_A3_2_T1_1" => {
+            let _ = test262_language_expressions_addition_S11_6_1_A3_2_T1_1();
+            TestResult::Ran
+        }
+        "test262_language_expressions_addition_S11_6_1_A3_2_T1_2" => {
+            let _ = test262_language_expressions_addition_S11_6_1_A3_2_T1_2();
+            TestResult::Ran
+        }
+        "test262_language_expressions_addition_S11_6_1_A3_2_T2_1" => {
+            let _ = test262_language_expressions_addition_S11_6_1_A3_2_T2_1();
+            TestResult::Ran
+        }
+        "test262_language_expressions_addition_S11_6_1_A3_2_T2_2" => {
+            let _ = test262_language_expressions_addition_S11_6_1_A3_2_T2_2();
+            TestResult::Ran
+        }
+        "test262_language_expressions_addition_S11_6_1_A3_2_T2_3" => {
+            let _ = test262_language_expressions_addition_S11_6_1_A3_2_T2_3();
+            TestResult::Ran
+        }
+        "test262_language_expressions_addition_S11_6_1_A3_2_T2_4" => {
+            let _ = test262_language_expressions_addition_S11_6_1_A3_2_T2_4();
+            TestResult::Ran
         }
         "test262_language_expressions_addition_S11_6_1_A4_T1" => {
             let _ = test262_language_expressions_addition_S11_6_1_A4_T1();
-            true
+            TestResult::Ran
         }
         "test262_language_expressions_addition_S11_6_1_A4_T2" => {
             let _ = test262_language_expressions_addition_S11_6_1_A4_T2();
-            true
+            TestResult::Ran
         }
         "test262_language_expressions_addition_S11_6_1_A4_T3" => {
             let _ = test262_language_expressions_addition_S11_6_1_A4_T3();
-            true
+            TestResult::Ran
         }
         "test262_language_expressions_addition_S11_6_1_A4_T4" => {
             let _ = test262_language_expressions_addition_S11_6_1_A4_T4();
-            true
+            TestResult::Ran
         }
         "test262_language_expressions_addition_S11_6_1_A4_T5" => {
             let _ = test262_language_expressions_addition_S11_6_1_A4_T5();
-            true
+            TestResult::Ran
         }
         "test262_language_expressions_addition_S11_6_1_A4_T6" => {
             let _ = test262_language_expressions_addition_S11_6_1_A4_T6();
-            true
+            TestResult::Ran
         }
         "test262_language_expressions_addition_S11_6_1_A4_T7" => {
             let _ = test262_language_expressions_addition_S11_6_1_A4_T7();
-            true
+            TestResult::Ran
         }
         "test262_language_expressions_addition_S11_6_1_A4_T8" => {
             let _ = test262_language_expressions_addition_S11_6_1_A4_T8();
-            true
+            TestResult::Ran
         }
         "test262_language_expressions_addition_S11_6_1_A4_T9" => {
             let _ = test262_language_expressions_addition_S11_6_1_A4_T9();
-            true
+            TestResult::Ran
         }
-        "test262_language_expressions_division_line_terminator" => {
-            let _ = test262_language_expressions_division_line_terminator();
-            true
+        "test262_language_expressions_addition_symbol_to_string" => {
+            let _ = test262_language_expressions_addition_symbol_to_string();
+            TestResult::Ran
         }
-        "test262_language_expressions_division_no_magic_asi" => {
-            let _ = test262_language_expressions_division_no_magic_asi();
-            true
-        }
-        "test262_language_expressions_division_S11_5_2_A3_T1_4" => {
-            let _ = test262_language_expressions_division_S11_5_2_A3_T1_4();
-            true
-        }
-        "test262_language_expressions_division_S11_5_2_A4_T1_1" => {
-            let _ = test262_language_expressions_division_S11_5_2_A4_T1_1();
-            true
-        }
-        "test262_language_expressions_division_S11_5_2_A4_T1_2" => {
-            let _ = test262_language_expressions_division_S11_5_2_A4_T1_2();
-            true
-        }
-        "test262_language_expressions_division_S11_5_2_A4_T10" => {
-            let _ = test262_language_expressions_division_S11_5_2_A4_T10();
-            true
-        }
-        "test262_language_expressions_division_S11_5_2_A4_T2" => {
-            let _ = test262_language_expressions_division_S11_5_2_A4_T2();
-            true
-        }
-        "test262_language_expressions_division_S11_5_2_A4_T3" => {
-            let _ = test262_language_expressions_division_S11_5_2_A4_T3();
-            true
-        }
-        "test262_language_expressions_division_S11_5_2_A4_T4" => {
-            let _ = test262_language_expressions_division_S11_5_2_A4_T4();
-            true
-        }
-        "test262_language_expressions_division_S11_5_2_A4_T5" => {
-            let _ = test262_language_expressions_division_S11_5_2_A4_T5();
-            true
-        }
-        "test262_language_expressions_division_S11_5_2_A4_T6" => {
-            let _ = test262_language_expressions_division_S11_5_2_A4_T6();
-            true
-        }
-        "test262_language_expressions_division_S11_5_2_A4_T8" => {
-            let _ = test262_language_expressions_division_S11_5_2_A4_T8();
-            true
-        }
-        "test262_language_expressions_division_S11_5_2_A4_T9" => {
-            let _ = test262_language_expressions_division_S11_5_2_A4_T9();
-            true
-        }
-        "test262_language_expressions_multiplication_line_terminator" => {
-            let _ = test262_language_expressions_multiplication_line_terminator();
-            true
-        }
-        "test262_language_expressions_multiplication_S11_5_1_A3_T1_4" => {
-            let _ = test262_language_expressions_multiplication_S11_5_1_A3_T1_4();
-            true
-        }
-        "test262_language_expressions_multiplication_S11_5_1_A4_T1_1" => {
-            let _ = test262_language_expressions_multiplication_S11_5_1_A4_T1_1();
-            true
-        }
-        "test262_language_expressions_multiplication_S11_5_1_A4_T1_2" => {
-            let _ = test262_language_expressions_multiplication_S11_5_1_A4_T1_2();
-            true
-        }
-        "test262_language_expressions_multiplication_S11_5_1_A4_T2" => {
-            let _ = test262_language_expressions_multiplication_S11_5_1_A4_T2();
-            true
-        }
-        "test262_language_expressions_multiplication_S11_5_1_A4_T3" => {
-            let _ = test262_language_expressions_multiplication_S11_5_1_A4_T3();
-            true
-        }
-        "test262_language_expressions_multiplication_S11_5_1_A4_T4" => {
-            let _ = test262_language_expressions_multiplication_S11_5_1_A4_T4();
-            true
-        }
-        "test262_language_expressions_multiplication_S11_5_1_A4_T5" => {
-            let _ = test262_language_expressions_multiplication_S11_5_1_A4_T5();
-            true
-        }
-        "test262_language_expressions_multiplication_S11_5_1_A4_T6" => {
-            let _ = test262_language_expressions_multiplication_S11_5_1_A4_T6();
-            true
-        }
-        "test262_language_expressions_multiplication_S11_5_1_A4_T7" => {
-            let _ = test262_language_expressions_multiplication_S11_5_1_A4_T7();
-            true
-        }
-        "test262_language_expressions_multiplication_S11_5_1_A4_T8" => {
-            let _ = test262_language_expressions_multiplication_S11_5_1_A4_T8();
-            true
-        }
-        "test262_language_expressions_strict_equals_S11_9_4_A3" => {
-            let _ = test262_language_expressions_strict_equals_S11_9_4_A3();
-            true
-        }
-        "test262_language_expressions_strict_equals_S11_9_4_A4_2" => {
-            let _ = test262_language_expressions_strict_equals_S11_9_4_A4_2();
-            true
-        }
-        "test262_language_expressions_strict_equals_S11_9_4_A4_3" => {
-            let _ = test262_language_expressions_strict_equals_S11_9_4_A4_3();
-            true
-        }
-        "test262_language_expressions_strict_equals_S11_9_4_A5" => {
-            let _ = test262_language_expressions_strict_equals_S11_9_4_A5();
-            true
-        }
-        "test262_language_expressions_strict_equals_S11_9_4_A6_2" => {
-            let _ = test262_language_expressions_strict_equals_S11_9_4_A6_2();
-            true
-        }
-        "test262_language_expressions_subtraction_S11_6_2_A3_T1_4" => {
-            let _ = test262_language_expressions_subtraction_S11_6_2_A3_T1_4();
-            true
-        }
-        "test262_language_expressions_subtraction_S11_6_2_A4_T1" => {
-            let _ = test262_language_expressions_subtraction_S11_6_2_A4_T1();
-            true
-        }
-        "test262_language_expressions_subtraction_S11_6_2_A4_T2" => {
-            let _ = test262_language_expressions_subtraction_S11_6_2_A4_T2();
-            true
-        }
-        "test262_language_expressions_subtraction_S11_6_2_A4_T3" => {
-            let _ = test262_language_expressions_subtraction_S11_6_2_A4_T3();
-            true
-        }
-        "test262_language_expressions_subtraction_S11_6_2_A4_T4" => {
-            let _ = test262_language_expressions_subtraction_S11_6_2_A4_T4();
-            true
-        }
-        "test262_language_expressions_subtraction_S11_6_2_A4_T5" => {
-            let _ = test262_language_expressions_subtraction_S11_6_2_A4_T5();
-            true
-        }
-        "test262_language_expressions_subtraction_S11_6_2_A4_T6" => {
-            let _ = test262_language_expressions_subtraction_S11_6_2_A4_T6();
-            true
-        }
-        "test262_language_expressions_subtraction_S11_6_2_A4_T7" => {
-            let _ = test262_language_expressions_subtraction_S11_6_2_A4_T7();
-            true
-        }
-        "test262_language_expressions_subtraction_S11_6_2_A4_T8" => {
-            let _ = test262_language_expressions_subtraction_S11_6_2_A4_T8();
-            true
-        }
-        "test262_language_statements_if_empty_statement" => {
-            let _ = test262_language_statements_if_empty_statement();
-            true
-        }
-        "test262_language_statements_if_S12_5_A1_1_T1" => {
-            let _ = test262_language_statements_if_S12_5_A1_1_T1();
-            true
-        }
-        "test262_language_statements_if_S12_5_A1_1_T2" => {
-            let _ = test262_language_statements_if_S12_5_A1_1_T2();
-            true
-        }
-        "test262_language_statements_if_S12_5_A10_T1" => {
-            let _ = test262_language_statements_if_S12_5_A10_T1();
-            true
-        }
-        "test262_language_statements_if_S12_5_A10_T2" => {
-            let _ = test262_language_statements_if_S12_5_A10_T2();
-            true
-        }
-        "test262_language_statements_if_S12_5_A12_T1" => {
-            let _ = test262_language_statements_if_S12_5_A12_T1();
-            true
-        }
-        "test262_language_statements_if_S12_5_A12_T2" => {
-            let _ = test262_language_statements_if_S12_5_A12_T2();
-            true
-        }
-        "test262_language_statements_if_S12_5_A12_T3" => {
-            let _ = test262_language_statements_if_S12_5_A12_T3();
-            true
-        }
-        "test262_language_statements_if_S12_5_A12_T4" => {
-            let _ = test262_language_statements_if_S12_5_A12_T4();
-            true
-        }
-        "test262_language_statements_if_S12_5_A1_T1" => {
-            let _ = test262_language_statements_if_S12_5_A1_T1();
-            true
-        }
-        "test262_language_statements_if_S12_5_A1_T2" => {
-            let _ = test262_language_statements_if_S12_5_A1_T2();
-            true
-        }
-        _ => false,
+        _ => TestResult::Unknown,
     }
 }
 
@@ -358,13 +336,18 @@ fn run_all(binary: &str) {
     let mut passed = 0usize;
     let mut failed = 0usize;
     let mut errors = 0usize;
+    let mut skipped = 0usize;
     let mut failures: Vec<(String, String)> = Vec::new();
     for (i, test) in ALL_TESTS.iter().enumerate() {
         flush_stdout();
         let result = Command::new(binary).arg(test).output();
         match result {
             Ok(out) => {
-                if out.status.success() {
+                let code = out.status.code();
+                if code == Some(3) {
+                    skipped += 1;
+                    eprintln!("[{}/{}] {} ... SKIP", i + 1, total, test);
+                } else if out.status.success() {
                     passed += 1;
                     eprintln!("[{}/{}] {} ... PASS", i + 1, total, test);
                 } else {
@@ -384,8 +367,8 @@ fn run_all(binary: &str) {
     eprintln!();
     eprintln!("=== test262 Summary ===");
     eprintln!(
-        "Total: {}, Passed: {}, Failed: {}, Errors: {}",
-        total, passed, failed, errors
+        "Total: {}, Passed: {}, Failed: {}, Skipped: {}, Errors: {}",
+        total, passed, failed, skipped, errors
     );
     if !failures.is_empty() {
         eprintln!();

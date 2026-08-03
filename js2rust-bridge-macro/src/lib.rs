@@ -108,8 +108,10 @@ fn generate() -> Result<TokenStream, proc_macro2::TokenStream> {
         std::path::Path::new(&manifest_dir).join(&config.project.js_dir);
     let js_files = config.project.js_files.clone();
 
-    // Resolve cache directory
-    let cache_dir = std::path::Path::new(&manifest_dir).join(".js2zig-cache");
+    // Resolve cache directory (allow override via env var)
+    let cache_dir = std::env::var("JS2RUST_CACHE_DIR")
+        .map(std::path::PathBuf::from)
+        .unwrap_or_else(|_| std::path::Path::new(&manifest_dir).join(".js2zig-cache"));
 
     // Convert host function declarations — now uses js2zig_core canonical implementation
     let host_config = config

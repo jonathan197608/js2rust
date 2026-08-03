@@ -39,6 +39,13 @@ impl TypeInferrer {
                 Some(Declaration::ClassDeclaration(cd)) => {
                     self.walk_class_body_for_analysis(cd);
                 }
+                Some(Declaration::VariableDeclaration(vd)) => {
+                    for decl in &vd.declarations {
+                        if let Some(init) = &decl.init {
+                            self.walk_expr_for_analysis(init);
+                        }
+                    }
+                }
                 _ => {}
             },
             Statement::ExportDefaultDeclaration(export_decl) => match &export_decl.declaration {
@@ -386,6 +393,18 @@ impl TypeInferrer {
                     }
                     Some(Declaration::ClassDeclaration(cd)) => {
                         Self::collect_idents_from_class(cd.as_ref(), &names);
+                    }
+                    Some(Declaration::VariableDeclaration(vd)) => {
+                        // Exported consts are "used" by importers — add their
+                        // names to prevent unused-constant elimination.
+                        for decl in &vd.declarations {
+                            if let Some(name) = crate::infer::binding_name(&decl.id) {
+                                names.borrow_mut().insert(name.to_string());
+                            }
+                            if let Some(init) = &decl.init {
+                                Self::collect_idents_from_expr(init, &names);
+                            }
+                        }
                     }
                     _ => {}
                 },

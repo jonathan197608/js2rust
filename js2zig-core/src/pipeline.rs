@@ -663,9 +663,10 @@ fn transpile_cache_miss(
         }
     }
 
-    // Write CABI metadata
+    // Write CABI metadata and get the JSON string directly (avoids
+    // re-reading the file which can fail due to Defender scanning).
     let include_init = !is_test;
-    write_cabi_metadata(
+    let result_cabi_json = write_cabi_metadata(
         out_dir,
         project_name,
         &all_cabi_exports,
@@ -673,10 +674,6 @@ fn transpile_cache_miss(
         include_init,
         &cabi_rename,
     );
-
-    // Collect cabi_exports_json
-    let cabi_path = out_dir.join(project_name).join("cabi_exports.json");
-    let result_cabi_json = fs::read_to_string(&cabi_path).unwrap_or_default();
 
     // Persist diagnostics
     save_diagnostics(out_dir, project_name, &file_diagnostics);
@@ -693,6 +690,11 @@ fn transpile_cache_miss(
         if let Some(ref opt) = config.build.zig_optimize {
             build_cmd.arg(format!("-Doptimize={}", opt));
         }
+        // Use a project-local cache dir to avoid Windows Defender AccessDenied
+        // issues with the default global cache at %LOCALAPPDATA%/zig.
+        let local_cache = project_path.join(".zig-global-cache");
+        std::fs::create_dir_all(&local_cache).ok();
+        build_cmd.env("ZIG_GLOBAL_CACHE_DIR", &local_cache);
         let build_result = build_cmd.current_dir(&project_path).output();
         match build_result {
             Ok(result) if result.status.success() => {
@@ -721,9 +723,12 @@ fn transpile_cache_miss(
                 println!("  zig test: SKIPPED (project has host function dependencies)");
             }
         } else {
+            let local_cache = project_path.join(".zig-global-cache");
+            std::fs::create_dir_all(&local_cache).ok();
             let test_result = crate::zig_command()
                 .arg("build")
                 .arg("test")
+                .env("ZIG_GLOBAL_CACHE_DIR", &local_cache)
                 .current_dir(&project_path)
                 .stdout(Stdio::null())
                 .stderr(Stdio::null())

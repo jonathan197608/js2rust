@@ -470,7 +470,7 @@ pub fn write_cabi_metadata(
     host_fns: &HostFnRegistry,
     include_init: bool,
     cabi_rename: &HashMap<String, String>,
-) {
+) -> String {
     let project_dir = out_dir.join(project_name);
 
     // cabi_exports.json — filter out exports with Anytype returns or params (no C ABI export generated)
@@ -585,14 +585,16 @@ pub fn write_cabi_metadata(
         }));
     }
 
-    if let Ok(json_str) = serde_json::to_string_pretty(&exports_value) {
-        let _ = fs::write(&exports_path, &json_str);
-    }
+    let json_str =
+        serde_json::to_string_pretty(&exports_value).unwrap_or_else(|_| String::from("[]"));
+    let _ = fs::write(&exports_path, &json_str);
 
     // cabi_imports.json
     let imports_path = project_dir.join("cabi_imports.json");
     let imports_value = host_fns.to_json_value();
-    if let Ok(json_str) = serde_json::to_string_pretty(&imports_value) {
-        let _ = fs::write(&imports_path, &json_str);
+    if let Ok(imports_json) = serde_json::to_string_pretty(&imports_value) {
+        let _ = fs::write(&imports_path, &imports_json);
     }
+
+    json_str
 }

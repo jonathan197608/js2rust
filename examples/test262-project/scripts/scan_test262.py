@@ -1,230 +1,39 @@
 #!/usr/bin/env python3
 """
-test262 scanner: transforms test262 test files into js2rust-compatible format.
+test262 scanner: wraps raw test262 test files into js2rust-compatible format.
 
 Usage:
-    python scan_test262.py <test262_dir> [--category <path>] [--max <N>]
+    python scan_test262.py <test_dir> [--category <path>] [--max <N>]
 
-Scans test262 .js files, applies harness transformations, and generates:
-  - js_src/runtime.js     (standalone reference, NOT in js2rust.toml)
-  - js_src/test262_*.js   (one file per test, with inline assert helpers)
-  - js2rust.toml          (project config)
-  - src/main.rs           (test runner with auto-generated dispatch)
+Scans .js test files from a directory (no git clone needed -- just copy
+test262 test fragments into any directory and point the scanner at it).
 
 Design principles:
-  - Minimize JS rewriting: only assert.sameValue -> assert_sameValue
-  - Inline assert helpers: each test file self-contained (non-exported → anytype)
-  - Per-test isolation: each test exported individually for crash isolation
-  - runtime.js: standalone reference for future transpiler improvements
+  - NO filtering: all tests are included; unsupported features surface as
+    Zig compile errors, which serve as a feature-gap TODO list.
+  - NO test modification: raw test code is wrapped verbatim in an export
+    function. Only frontmatter (/*---...---*/) is stripped (it is metadata,
+    not test code).
+  - NO runtime.js: assert is a built-in global injected by the Zig runtime
+    preamble (see push_runtime_imports in project.rs). Test files do not
+    need any import statement.
+  - Per-test isolation: each test is exported individually for crash isolation.
 """
 
 import argparse
+import hashlib
 import os
 import re
 import sys
 from collections import defaultdict
 from pathlib import Path
 
-# ─── runtime.js preamble (shared across all test files) ───
-RUNTIME = """\
-// --- test262 runtime: shared assert helpers ---
-// Non-exported functions → Zig anytype params (Rule 7)
-function assert_same_value(actual, expected, message) {
-    if (actual !== expected) {
-        if (message !== undefined) { host_assert_fail(message); }
-        else { host_assert_fail("assert.sameValue failed"); }
-    }
-}
-function assert_not_same_value(actual, expected, message) {
-    if (actual === expected) {
-        if (message !== undefined) { host_assert_fail(message); }
-        else { host_assert_fail("assert.notSameValue failed"); }
-    }
-}
-"""
 
-# ─── Skip patterns ───
-SKIP_PATTERNS = [
-    r'\$DONOTEVALUATE',
-    r'\$MAX_ITERATIONS',
-    r'\beval\s*\(',
-    r'\$262',
-    r'\basync\s+',
-    r'\bawait\s+',
-    r'\bimport\s+',
-    r'\byield\b',
-    r'\bfunction\s*\*',
-    r'\bSymbol\b',
-    r'\bProxy\b',
-    r'\bReflect\b',
-    r'\bWeakMap\b',
-    r'\bWeakSet\b',
-    r'\bSharedArrayBuffer\b',
-    r'\bBigInt\b',
-    r'\b\d+n\b',
-    r'\b0x[0-9a-fA-F]+n\b',
-    r'\binstanceof\b',
-    r'\bassert\.throws\b',
-    r'\bassert\.doesNotThrow\b',
-    r'\bassert\.sameValue\s*\(\s*undefined',
-    r'\bassert\s*\(',          # bare assert() calls
-    r'\.\.\.',                 # rest/spread
-    r'\b(const|let|var)\s*\[', # array destructuring
-    r'\b(const|let|var)\s*\{', # object destructuring
-    r'\{[^}]*\.\.\.',          # object rest destructuring
-    r'\btry\s*\{',             # try/catch
-    r'\bthis\b',
-    r'\b[+-]?0\s*/\s*[+-]?0\b',  # 0/0 → Zig illegal behavior
-    r'\bparseInt\b',
-    r'\bRegExp\b',
-    r'\bDate\b',
-    r'\bArray\.isArray\b',
-    r'\bnew\s+(?!Test262Error\b)\w+',
-    r'\([^)]*\w+\s*=(?![=>])\s*[^=)]',  # assignment-as-expression
-    r'\{\s*\}',
-    r'\bfunction\s*\([^)]*\)\s*\{',
-    r'\b\.valueOf\b',
-    r'\b\.toString\s*\(',
-    r'\bdelete\s+',
-    r'\bvoid\s+',
-    r'\bin\s\s',
-]
+# ─── Frontmatter stripping ───
 
-# ─── Helpers ───
-
-def strip_strings_and_comments(content: str) -> str:
-    """Remove string literals and comments to avoid false positives in skip matching."""
-    result = re.sub(r'/\*.*?\*/', '', content, flags=re.DOTALL)
-    result = re.sub(r'//[^\n]*', '', result)
-    result = re.sub(r"'(?:[^'\\]|\\.)*'", "''", result)
-    result = re.sub(r'"(?:[^"\\]|\\.)*"', '""', result)
-    result = re.sub(r'`(?:[^`\\]|\\.)*`', '``', result)
-    return result
-
-
-def should_skip(content: str, rel_path: str = "") -> str | None:
-    """Check if test should be skipped. Returns reason string or None."""
-    code_only = strip_strings_and_comments(content)
-
-    for pattern in SKIP_PATTERNS:
-        m = re.search(pattern, code_only)
-        if m:
-            return f"uses {m.group().strip()}"
-
-    # typeof on undeclared variables
-    reason = _check_typeof_undeclared(code_only)
-    if reason:
-        return reason
-
-    # Path-based patterns
-    if 'unresolvable' in rel_path.lower():
-        return "unresolvable reference test"
-    if 'let-identifier' in rel_path.lower():
-        return "let as identifier (ASI edge case)"
-
-    return None
-
-
-def _check_typeof_undeclared(code: str) -> str | None:
-    """Detect `typeof x` where x is never declared."""
-    typeof_ids = set(re.findall(r'\btypeof\s+([a-zA-Z_$][a-zA-Z_$0-9]*)', code))
-    if not typeof_ids:
-        return None
-
-    declared = set()
-    for m in re.finditer(r'\b(?:var|let|const)\s+([a-zA-Z_$][a-zA-Z_$0-9]*)', code):
-        declared.add(m.group(1))
-    for m in re.finditer(r'\bfunction\s+([a-zA-Z_$][a-zA-Z_$0-9]*)', code):
-        declared.add(m.group(1))
-    for m in re.finditer(r'\b([a-zA-Z_$][a-zA-Z_$0-9]*)\s*=(?!=)', code):
-        declared.add(m.group(1))
-    for m in re.finditer(r'\bfor\s*\(\s*var\s+([a-zA-Z_$][a-zA-Z_$0-9]*)', code):
-        declared.add(m.group(1))
-
-    undeclared = typeof_ids - declared
-    if undeclared:
-        return f"typeof on undeclared: {', '.join(sorted(undeclared))}"
-    return None
-
-
-# ─── Transformations ───
-
-def transform_content(content: str) -> str:
-    """Apply minimal text transformations to test262 content."""
-    # Strip frontmatter
-    content = re.sub(r'/\*---.*?---\*/', '', content, flags=re.DOTALL)
-
-    # assert.sameValue -> assert_same_value (only rewriting needed)
-    content = re.sub(r'\bassert\.sameValue\s*\(', 'assert_same_value(', content)
-    content = re.sub(r'\bassert\.notSameValue\s*\(', 'assert_not_same_value(', content)
-
-    # throw new Test262Error(msg) -> host_assert_fail(msg)
-    content = re.sub(r'throw\s+new\s+Test262Error\s*\(', 'host_assert_fail(', content)
-    content = re.sub(r'new\s+Test262Error\s*\(', 'host_assert_fail(', content)
-
-    # Fix 2-arg assert calls -> default "" 3rd arg
-    for func_name in ('assert_same_value', 'assert_not_same_value'):
-        content = _add_default_third_arg(content, func_name + '(', '""')
-
-    return content
-
-
-def _add_default_third_arg(content: str, prefix: str, default_arg: str) -> str:
-    """For 2-arg calls matching prefix, insert default_arg as 3rd arg."""
-    result = []
-    i = 0
-    plen = len(prefix)
-    while i < len(content):
-        idx = content.find(prefix, i)
-        if idx == -1:
-            result.append(content[i:])
-            break
-        result.append(content[i:idx])
-
-        start = idx + plen
-        depth = 1
-        comma_count = 0
-        j = start
-        while j < len(content) and depth > 0:
-            ch = content[j]
-            if ch == '(':
-                depth += 1
-            elif ch == ')':
-                depth -= 1
-                if depth == 0:
-                    break
-            elif ch == ',' and depth == 1:
-                comma_count += 1
-            elif ch in ('"', "'"):
-                quote = ch
-                j += 1
-                while j < len(content) and content[j] != quote:
-                    if content[j] == '\\':
-                        j += 1
-                    j += 1
-            elif ch == '`':
-                j += 1
-                while j < len(content) and content[j] != '`':
-                    if content[j] == '\\':
-                        j += 1
-                    j += 1
-            j += 1
-
-        if depth == 0 and comma_count == 1:
-            result.append(prefix)
-            result.append(content[start:j])
-            result.append(', ' + default_arg)
-            result.append(')')
-        else:
-            result.append(prefix)
-            if depth == 0:
-                result.append(content[start:j + 1])
-            else:
-                result.append(content[start:])
-                break
-
-        i = j + 1
-    return ''.join(result)
+def strip_frontmatter(content: str) -> str:
+    """Remove test262 frontmatter block (/*--- ... ---*/), keeping all test code."""
+    return re.sub(r'/\*---.*?---\*/', '', content, flags=re.DOTALL)
 
 
 # ─── Name generation ───
@@ -243,14 +52,11 @@ def generate_test_name(rel_path: str) -> str:
 
 
 def category_from_path(rel_path: str) -> str:
-    """Extract category slug from relative path.
-    e.g., language/expressions/addition/S11.6.1_A1.js -> 'expressions_addition'
-    """
+    """Extract category slug from relative path."""
     name = rel_path.replace('\\', '/')
     if name.startswith('test/'):
         name = name[5:]
     parts = name.split('/')
-    # Take first two path components (skip 'language' if present)
     if parts[0] == 'language':
         parts = parts[1:]
     return '_'.join(parts[:2])
@@ -258,23 +64,33 @@ def category_from_path(rel_path: str) -> str:
 
 # ─── Scanning ───
 
-def scan_directory(test262_dir: str, categories: list[str] | None,
-                   max_tests: int | None) -> tuple[dict[str, list[dict]], list[tuple[str, str]]]:
-    """Scan test262 directory, return tests grouped by category."""
-    base = Path(test262_dir) / 'test'
+def scan_directory(test_dir: str, categories: list[str] | None,
+                   max_tests: int | None) -> dict[str, list[dict]]:
+    """Scan directory for .js test files. No filtering -- include everything.
+
+    The directory can be:
+      - A full test262 repo clone (test/language/...)
+      - Just a directory of .js files copied from test262
+      - Any directory with .js files following test262 conventions
+    """
+    base = Path(test_dir)
+
+    # If the directory has a test/ subdirectory, use that as base
+    if (base / 'test').is_dir():
+        base = base / 'test'
 
     if categories:
         scan_dirs = [base / c for c in categories]
     else:
-        scan_dirs = [base / 'language']
+        # Default: scan everything under base
+        scan_dirs = [base]
 
     for d in scan_dirs:
         if not d.exists():
             print(f"Error: directory {d} does not exist", file=sys.stderr)
             sys.exit(1)
 
-    grouped = defaultdict(list)  # category -> [test dicts]
-    skipped = []
+    grouped = defaultdict(list)
     seen_names = set()
     total = 0
 
@@ -290,20 +106,17 @@ def scan_directory(test262_dir: str, categories: list[str] | None,
                 print(f"  SKIP (read error): {rel_str}: {e}", file=sys.stderr)
                 continue
 
-            skip_reason = should_skip(content, rel_str)
-            if skip_reason:
-                skipped.append((rel_str, skip_reason))
-                continue
+            # Strip frontmatter only -- no other modifications
+            test_code = strip_frontmatter(content)
 
-            transformed = transform_content(content)
             test_name = generate_test_name(rel_str)
 
             # Truncate long names
             if len(test_name) > 80:
-                import hashlib
                 h = hashlib.md5(test_name.encode()).hexdigest()[:8]
                 test_name = f"test262_{h}"
 
+            # Handle name collisions
             if test_name in seen_names:
                 continue
             seen_names.add(test_name)
@@ -312,7 +125,7 @@ def scan_directory(test262_dir: str, categories: list[str] | None,
             grouped[cat].append({
                 'name': test_name,
                 'source': rel_str,
-                'content': transformed,
+                'content': test_code,
             })
 
             if max_tests and sum(len(v) for v in grouped.values()) >= max_tests:
@@ -321,41 +134,18 @@ def scan_directory(test262_dir: str, categories: list[str] | None,
         if max_tests and sum(len(v) for v in grouped.values()) >= max_tests:
             break
 
-    return dict(grouped), skipped
+    return dict(grouped)
 
 
 # ─── Output generation ───
 
-# Inline assert helpers (per-file, non-exported → Zig anytype params)
-ASSERT_HELPERS = """\
-// --- assert helpers (non-exported → Zig anytype) ---
-function assert_same_value(actual, expected, message) {
-    if (actual !== expected) {
-        if (message !== undefined) { host_assert_fail(message); }
-        else { host_assert_fail("assert.sameValue failed"); }
-    }
-}
-function assert_not_same_value(actual, expected, message) {
-    if (actual === expected) {
-        if (message !== undefined) { host_assert_fail(message); }
-        else { host_assert_fail("assert.notSameValue failed"); }
-    }
-}
-"""
-
-
-def write_runtime(project_dir: str):
-    """Write shared runtime.js as standalone reference (NOT in js2rust.toml).
-    Each test file includes its own inline assert helpers due to transpiler
-    limitation: non-exported functions cannot be shared across JS files.
-    """
-    js_dir = Path(project_dir) / 'js_src'
-    js_dir.mkdir(exist_ok=True)
-    (js_dir / 'runtime.js').write_text(RUNTIME, encoding='utf-8')
-
-
 def write_js_files(project_dir: str, grouped: dict[str, list[dict]]):
-    """Write one JS file per test with inline assert helpers."""
+    """Write one JS file per test. Raw test code is wrapped verbatim -- no modifications.
+
+    No import statement needed: `assert` is a built-in global provided by the
+    Zig runtime preamble (push_runtime_imports in project.rs).
+    No runtime.js: assert functions are injected directly into each .zig file.
+    """
     js_dir = Path(project_dir) / 'js_src'
     js_dir.mkdir(exist_ok=True)
 
@@ -364,6 +154,11 @@ def write_js_files(project_dir: str, grouped: dict[str, list[dict]]):
         f.unlink()
     for f in js_dir.glob('test_*.js'):
         f.unlink()
+
+    # Remove old runtime.js if it exists
+    old_runtime = js_dir / 'runtime.js'
+    if old_runtime.exists():
+        old_runtime.unlink()
 
     # Ensure app.js
     app_js = js_dir / 'app.js'
@@ -383,17 +178,16 @@ def write_js_files(project_dir: str, grouped: dict[str, list[dict]]):
         filepath = js_dir / filename
 
         lines = [
-            f'// test262 source: test/{test["source"]}',
+            f'// test262 source: {test["source"]}',
             f'// AUTO-GENERATED by scan_test262.py',
-            '',
-            ASSERT_HELPERS.strip(),
             '',
             f'export function {test["name"]}() {{',
         ]
 
+        # Raw test code -- no modifications, just indented
         body = test['content'].strip()
         for line in body.split('\n'):
-            lines.append('    ' + line)
+            lines.append('    ' + line if line else '')
 
         lines.append('}')
 
@@ -401,7 +195,10 @@ def write_js_files(project_dir: str, grouped: dict[str, list[dict]]):
 
 
 def write_toml(project_dir: str, grouped: dict[str, list[dict]]):
-    """Write js2rust.toml with individual test files."""
+    """Write js2rust.toml with individual test files.
+
+    No runtime.js entry -- assert is a built-in global in the Zig runtime.
+    """
     toml_path = Path(project_dir) / 'js2rust.toml'
 
     lines = [
@@ -421,6 +218,7 @@ def write_toml(project_dir: str, grouped: dict[str, list[dict]]):
         '',
         '[build]',
         'force_rebuild = true',
+        'run_zig_build = false',
         '',
         '[[host_functions]]',
         'name = "host_assert_fail"',
@@ -432,7 +230,13 @@ def write_toml(project_dir: str, grouped: dict[str, list[dict]]):
 
 
 def write_main_rs(project_dir: str, grouped: dict[str, list[dict]]):
-    """Write src/main.rs with auto-generated dispatch table."""
+    """Write src/main.rs with auto-generated dispatch table.
+
+    Includes SKIP infrastructure: tests that fail transpilation are listed in
+    SKIPPED_TESTS and handled at runtime (exit code 3 = SKIP). This set is
+    empty by default — populate it after the first build reveals which tests
+    the transpiler cannot handle.
+    """
     main_rs_path = Path(project_dir) / 'src' / 'main.rs'
 
     # Flatten tests while preserving order
@@ -456,6 +260,20 @@ def write_main_rs(project_dir: str, grouped: dict[str, list[dict]]):
         'extern "C" { fn fflush(stream: *mut std::ffi::c_void) -> i32; }',
         'fn flush_stdout() { unsafe { fflush(std::ptr::null_mut()); } }',
         '',
+        '/// Tests that failed transpilation (unsupported JS features).',
+        '/// Their C ABI functions are not generated, so we skip them at runtime.',
+        '/// Populate this list after the first build by checking which tests',
+        '/// the transpiler skipped (look for "skip" in build output).',
+        'const SKIPPED_TESTS: &[(&str, &str)] = &[',
+        '    // ("test_name", "reason"),',
+        '];',
+        '',
+        'fn is_skipped(name: &str) -> Option<&\'static str> {',
+        '    SKIPPED_TESTS.iter()',
+        '        .find(|(n, _)| *n == name)',
+        '        .map(|(_, reason)| *reason)',
+        '}',
+        '',
         'const ALL_TESTS: &[&str] = &[',
     ]
 
@@ -464,6 +282,12 @@ def write_main_rs(project_dir: str, grouped: dict[str, list[dict]]):
 
     lines.extend([
         '];',
+        '',
+        'enum TestResult {',
+        '    Ran,',
+        '    Skipped(&\'static str),',
+        '    Unknown,',
+        '}',
         '',
         'fn main() {',
         '    let args: Vec<String> = env::args().collect();',
@@ -474,12 +298,21 @@ def write_main_rs(project_dir: str, grouped: dict[str, list[dict]]):
         '        "--all" => run_all(&binary),',
         '        test_name => {',
         '            js2rust_init();',
-        '            if !run_test_direct(test_name) {',
-        '                eprintln!("Unknown test: {}", test_name);',
-        '                eprintln!("Use --list to see available tests.");',
-        '                flush_stdout();',
-        '                js2rust_deinit();',
-        '                std::process::exit(2);',
+        '            match run_test_direct(test_name) {',
+        '                TestResult::Ran => {}',
+        '                TestResult::Skipped(reason) => {',
+        '                    eprintln!("SKIP: {}", reason);',
+        '                    flush_stdout();',
+        '                    js2rust_deinit();',
+        '                    std::process::exit(3);',
+        '                }',
+        '                TestResult::Unknown => {',
+        '                    eprintln!("Unknown test: {}", test_name);',
+        '                    eprintln!("Use --list to see available tests.");',
+        '                    flush_stdout();',
+        '                    js2rust_deinit();',
+        '                    std::process::exit(2);',
+        '                }',
         '            }',
         '            flush_stdout();',
         '            js2rust_deinit();',
@@ -488,15 +321,18 @@ def write_main_rs(project_dir: str, grouped: dict[str, list[dict]]):
         '}',
         '',
         '#[allow(clippy::let_unit_value)]',
-        'fn run_test_direct(test_name: &str) -> bool {',
+        'fn run_test_direct(test_name: &str) -> TestResult {',
+        '    if let Some(reason) = is_skipped(test_name) {',
+        '        return TestResult::Skipped(reason);',
+        '    }',
         '    match test_name {',
     ])
 
     for name in all_tests:
-        lines.append(f'        "{name}" => {{ let _ = {name}(); true }},')
+        lines.append(f'        "{name}" => {{ let _ = {name}(); TestResult::Ran }},')
 
     lines.extend([
-        '        _ => false,',
+        '        _ => TestResult::Unknown,',
         '    }',
         '}',
         '',
@@ -505,13 +341,18 @@ def write_main_rs(project_dir: str, grouped: dict[str, list[dict]]):
         '    let mut passed = 0usize;',
         '    let mut failed = 0usize;',
         '    let mut errors = 0usize;',
+        '    let mut skipped = 0usize;',
         '    let mut failures: Vec<(String, String)> = Vec::new();',
         '    for (i, test) in ALL_TESTS.iter().enumerate() {',
         '        flush_stdout();',
         '        let result = Command::new(binary).arg(test).output();',
         '        match result {',
         '            Ok(out) => {',
-        '                if out.status.success() {',
+        '                let code = out.status.code();',
+        '                if code == Some(3) {',
+        '                    skipped += 1;',
+        '                    eprintln!("[{}/{}] {} ... SKIP", i + 1, total, test);',
+        '                } else if out.status.success() {',
         '                    passed += 1;',
         '                    eprintln!("[{}/{}] {} ... PASS", i + 1, total, test);',
         '                } else {',
@@ -530,8 +371,8 @@ def write_main_rs(project_dir: str, grouped: dict[str, list[dict]]):
         '    }',
         '    eprintln!();',
         '    eprintln!("=== test262 Summary ===");',
-        '    eprintln!("Total: {}, Passed: {}, Failed: {}, Errors: {}",',
-        '        total, passed, failed, errors);',
+        '    eprintln!("Total: {}, Passed: {}, Failed: {}, Skipped: {}, Errors: {}",',
+        '        total, passed, failed, skipped, errors);',
         '    if !failures.is_empty() {',
         '        eprintln!();',
         '        eprintln!("=== Failures ===");',
@@ -552,12 +393,13 @@ def write_main_rs(project_dir: str, grouped: dict[str, list[dict]]):
 # ─── Entry point ───
 
 def main():
-    parser = argparse.ArgumentParser(description='Scan test262 tests → merged js2rust test files')
-    parser.add_argument('test262_dir', help='Path to test262 repository')
+    parser = argparse.ArgumentParser(
+        description='Scan test262 test files -> js2rust test files (no filtering, no modification)')
+    parser.add_argument('test_dir', help='Path to directory containing test .js files')
     parser.add_argument('--category', nargs='+', default=None,
-                        help='Category(s) to scan (e.g. language/expressions/addition)')
+                        help='Category subdirectory(s) to scan (e.g. language/expressions/addition)')
     parser.add_argument('--max', type=int, default=None,
-                        help='Maximum number of tests')
+                        help='Maximum number of tests to generate')
     parser.add_argument('--project-dir', default=None,
                         help='Output project directory (default: auto-detect)')
 
@@ -566,41 +408,34 @@ def main():
     project_dir = args.project_dir or os.path.normpath(
         os.path.join(os.path.dirname(os.path.abspath(__file__)), '..'))
 
-    cat_str = ' '.join(args.category) if args.category else 'language'
-    print(f"Scanning: {args.test262_dir}/test/{cat_str}")
+    cat_str = ' '.join(args.category) if args.category else '(all)'
+    print(f"Scanning: {args.test_dir} / {cat_str}")
     print(f"Output:   {project_dir}")
 
-    grouped, skipped = scan_directory(args.test262_dir, args.category, args.max)
+    grouped = scan_directory(args.test_dir, args.category, args.max)
 
     total_tests = sum(len(v) for v in grouped.values())
     print(f"\nResults:")
     print(f"  Categories: {len(grouped)}")
     print(f"  Generated:  {total_tests} tests")
-    print(f"  Skipped:    {len(skipped)} files")
-
-    if skipped:
-        print(f"\nSkipped (showing first 20):")
-        for path, reason in skipped[:20]:
-            print(f"  {path}: {reason}")
-        if len(skipped) > 20:
-            print(f"  ... and {len(skipped) - 20} more")
+    print(f"  (no filtering -- unsupported features will surface as Zig compile errors)")
 
     if not grouped:
         print("\nNo tests generated.")
         return
 
-    write_runtime(project_dir)
     write_js_files(project_dir, grouped)
     write_toml(project_dir, grouped)
     write_main_rs(project_dir, grouped)
 
     print(f"\nGenerated files:")
-    print(f"  js_src/runtime.js  (standalone reference, NOT in js2rust.toml)")
     for cat in sorted(grouped.keys()):
         count = len(grouped[cat])
         print(f"  js_src/test262_*.js  ({cat}: {count} tests)")
-    print(f"  js2rust.toml  ({total_tests} test entries)")
+    print(f"  js2rust.toml  ({total_tests} test entries + host_assert_fail)")
     print(f"  src/main.rs")
+    print(f"\nNote: assert is a built-in global in the Zig runtime preamble.")
+    print(f"      No runtime.js or import statements needed.")
 
 
 if __name__ == '__main__':
